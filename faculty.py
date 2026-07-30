@@ -3,10 +3,11 @@ import pypdf
 import requests
 import google.generativeai as genai
 import datetime
+import random
 
 st.set_page_config(page_title="Faculty Studio", page_icon="👨‍🏫", layout="wide")
 
-# Hide Streamlit form submission helper notes ("Press Enter to submit")
+# Hide Streamlit form submission helper notes
 st.markdown("""
     <style>
     [data-testid="InputInstructions"] {
@@ -25,7 +26,8 @@ if not BIN_ID or not JSONBIN_KEY or not GEMINI_KEY:
     st.stop()
 
 genai.configure(api_key=GEMINI_KEY)
-ai_model = genai.GenerativeModel("models/gemini-3.5-flash")
+# Fast, low-latency model for quick background style extraction
+style_analyzer_model = genai.GenerativeModel("models/gemini-2.5-flash-lite")
 
 def load_cloud_data():
     url = f"https://api.jsonbin.io/v3/b/{BIN_ID}/latest"
@@ -60,25 +62,25 @@ def extract_text_from_pdf(pdf_file):
     return text
 
 def analyze_style_profile(pqs_text):
-    if not pqs_text.strip():
+    """Pre-analyzes exemplar questions to reverse-engineer style profile cleanly."""
+    if not pqs_text or not pqs_text.strip():
         return "Standard NBME clinical vignette style with 4-5 choices."
     
     analysis_prompt = f"""
-    Analyze the following medical practice questions and reverse-engineer the writing style.
-    Summarize key rules regarding:
-    1. Clinical vignette length and structure.
+    Analyze the following medical practice questions and reverse-engineer the writing style into concise guidance rules:
+    1. Vignette length and clinical depth.
     2. Question stem phrasing.
-    3. Option/distractor formatting.
-    4. Difficulty level and explanation style.
+    3. Distractor structure and difficulty.
+    4. Rationale and explanation format.
 
     PRACTICE QUESTIONS:
-    {pqs_text[:8000]}
+    {pqs_text[:6000]}
     """
     try:
-        res = ai_model.generate_content(analysis_prompt)
+        res = style_analyzer_model.generate_content(analysis_prompt)
         return res.text
-    except Exception:
-        return "Standard NBME clinical vignette style."
+    except Exception as e:
+        return f"Standard NBME style (Error during analysis: {e})"
 
 data = load_cloud_data()
 
@@ -199,11 +201,12 @@ else:
             elif not slides_file:
                 st.warning("Please upload a slide PDF.")
             else:
-                with st.spinner("Parsing slides, reverse-engineering question style, and syncing to database..."):
+                with st.spinner("Extracting PDF text and analyzing style profile..."):
                     slides_text = extract_text_from_pdf(slides_file)
                     pqs_text = extract_text_from_pdf(pqs_file) if pqs_file else ""
                     
-                    style_profile = analyze_style_profile(pqs_text)
+                    # Run pre-analysis once during save
+                    style_profile = analyze_style_profile(pqs_text) if pqs_text else "Standard NBME clinical vignette style with 4-5 choices."
                     date_str = session_date.strftime("%Y-%m-%d")
                     
                     course_data["sessions"][session_title] = {
@@ -238,7 +241,7 @@ else:
                 with st.expander(f"📖 [{display_date}] {s_title}"):
                     has_pqs = bool(sess_info.get("pqs"))
                     st.write(f"**Date Held:** {display_date}")
-                    st.write(f"**Status:** {'🟢 Custom PQs Pre-Analyzed' if has_pqs else '🟡 Default NBME Style'}")
+                    st.write(f"**Status:** {'🟢 Custom Practice Questions Pre-Analyzed' if has_pqs else '🟡 Default NBME Style'}")
                     
                     st.markdown("---")
                     st.markdown("#### ✏️ Edit Session Details")
@@ -273,16 +276,18 @@ else:
                     
                     with col_save:
                         if st.button("💾 Save Session Changes", key=f"save_{s_title}", type="primary"):
-                            with st.spinner("Updating session and re-analyzing style..."):
+                            with st.spinner("Syncing changes..."):
                                 updated_date_str = edit_date.strftime("%Y-%m-%d")
                                 
+                                # Process slide PDF
                                 if new_slides_file:
                                     updated_slides = extract_text_from_pdf(new_slides_file)
                                     updated_slides_fn = new_slides_file.name
                                 else:
                                     updated_slides = sess_info.get("slides", "")
-                                    updated_slides_fn = sess_info.get("slides_filename", new_slides_file.name if new_slides_file else curr_slides_fn)
+                                    updated_slides_fn = sess_info.get("slides_filename", curr_slides_fn)
                                     
+                                # Re-analyze style ONLY IF a new PQ PDF was actually uploaded
                                 if new_pqs_file:
                                     updated_pqs = extract_text_from_pdf(new_pqs_file)
                                     updated_pqs_fn = new_pqs_file.name
@@ -290,7 +295,7 @@ else:
                                 else:
                                     updated_pqs = sess_info.get("pqs", "")
                                     updated_pqs_fn = sess_info.get("pqs_filename", "")
-                                    updated_style = sess_info.get("style_profile", "")
+                                    updated_style = sess_info.get("style_profile", "Standard NBME clinical vignette style with 4-5 choices.")
                                 
                                 if edit_title != s_title:
                                     del course_data["sessions"][s_title]
