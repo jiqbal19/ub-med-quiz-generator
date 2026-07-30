@@ -23,9 +23,30 @@ if not BIN_ID or not JSONBIN_KEY:
 # Initialize Google GenAI client
 client = genai.Client(api_key=GEMINI_KEY)
 
-# Active production models for google-genai SDK
-PRIMARY_MODEL = "gemini-2.5-flash"
-FALLBACK_MODELS = ["gemini-2.5-pro", "gemini-1.5-flash"]
+# Dynamically resolve an active, supported model for this specific API key
+def get_best_available_model():
+    try:
+        available_models = [m.name for m in client.models.list()]
+        
+        # 1. Prefer active Flash models (fastest)
+        for m in available_models:
+            clean_name = m.replace("models/", "")
+            if "flash" in clean_name.lower() and "embed" not in clean_name.lower() and "text-" not in clean_name.lower():
+                return clean_name
+                
+        # 2. Prefer active Pro models (deep reasoning)
+        for m in available_models:
+            clean_name = m.replace("models/", "")
+            if "pro" in clean_name.lower() and "embed" not in clean_name.lower():
+                return clean_name
+                
+        # 3. Fallback to first available generation model
+        if available_models:
+            return available_models[0].replace("models/", "")
+    except Exception as e:
+        st.warning(f"Could not dynamically list models ({e}). Falling back to 'gemini-1.5-flash'.")
+    
+    return "gemini-1.5-flash"
 
 def load_cloud_data():
     url = f"https://api.jsonbin.io/v3/b/{BIN_ID}/latest"
@@ -138,7 +159,7 @@ with col2:
     st.subheader("3. Generated Quiz Output")
     
     if st.session_state.is_generating:
-        # Prompt only on tab close or page refresh
+        # Warns ONLY on tab close or page refresh (does NOT trigger when simply switching browser tabs)
         st.components.v1.html("""
             <script>
             window.addEventListener('beforeunload', function (e) {
@@ -152,7 +173,7 @@ with col2:
         progress_bar = st.progress(0)
         output_container = st.empty()
         
-        status_box.info("⚡ Preparing full slide decks for AI context...")
+        status_box.info("⚡ Detecting available AI model and staging slide decks...")
         progress_bar.progress(15)
         
         uploaded_files = []
@@ -164,6 +185,10 @@ with col2:
         remainder = num_questions % k
         
         try:
+            # 1. Resolve working model
+            active_model_name = get_best_available_model()
+            
+            # 2. Stage full slide decks
             for idx, title in enumerate(selected_session_titles):
                 quota = base_quota + (1 if idx < remainder else 0)
                 sess = sessions_dict[title]
@@ -186,7 +211,7 @@ with col2:
                     combined_styles += f"\n--- Course-Wide Faculty Writing Style Guidelines ---\n" + global_course_style
 
             progress_bar.progress(40)
-            status_box.info("🧠 Analyzing 100% of slide contents & matching faculty style...")
+            status_box.info(f"🧠 Connected to model `{active_model_name}`. Analyzing slide contents & faculty style...")
 
             prompt = f"""
             You are a medical school faculty member writing in-house exam practice questions for students enrolled in {selected_course}.
@@ -231,26 +256,10 @@ with col2:
 
             contents_payload = uploaded_files + [prompt]
 
-            response = None
-            models_to_try = [PRIMARY_MODEL] + FALLBACK_MODELS
-            
-            for target_model in models_to_try:
-                try:
-                    response = client.models.generate_content_stream(
-                        model=target_model,
-                        contents=contents_payload
-                    )
-                    break
-                except Exception as model_err:
-                    if "503" in str(model_err) or "UNAVAILABLE" in str(model_err) or "404" in str(model_err):
-                        status_box.warning(f"⚠️ Model '{target_model}' busy or unavailable. Trying alternative engine...")
-                        time.sleep(1)
-                        continue
-                    else:
-                        raise model_err
-
-            if not response:
-                raise Exception("Google API endpoints are currently experiencing high demand. Please try again in a few moments.")
+            response = client.models.generate_content_stream(
+                model=active_model_name,
+                contents=contents_payload
+            )
 
             progress_bar.progress(60)
             status_box.info("✍️ Live Streaming: Writing questions & rationales below...")
