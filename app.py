@@ -346,18 +346,7 @@ with col2:
                     progress_bar.progress(current_prog)
                     output_container.text_area("Live Stream Output:", value=full_text, height=450)
 
-            # Store in session state
             st.session_state.generated_quiz = full_text
-
-            # DUAL-LAYER FIX: Backup to browser localStorage before cleanup
-            escaped_text = json.dumps(full_text)
-            st.components.v1.html(f"""
-                <script>
-                try {{
-                    window.localStorage.setItem('ub_med_quiz_backup', {escaped_text});
-                }} catch (e) {{}}
-                </script>
-            """, height=0)
 
             for g_f in uploaded_files:
                 try:
@@ -370,32 +359,7 @@ with col2:
             time.sleep(0.5)
             
             st.session_state.is_generating = False
-            
-            # Render directly in-place without triggering a risky st.rerun() reset
-            status_box.empty()
-            progress_bar.empty()
-            output_container.empty()
-            
-            st.success("🎉 Practice Quiz Generated!")
-            tb_col1, tb_col2, tb_col3 = st.columns([6, 1.5, 1.5])
-            with tb_col2:
-                st.download_button(
-                    label="📄 .TXT",
-                    data=full_text,
-                    file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.txt",
-                    mime="text/plain",
-                    use_container_width=True
-                )
-            with tb_col3:
-                docx_data = create_docx(full_text)
-                st.download_button(
-                    label="📝 .DOCX",
-                    data=docx_data,
-                    file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    use_container_width=True
-                )
-            st.code(full_text, language="markdown")
+            st.rerun()
             
         except Exception as e:
             for g_f in uploaded_files:
