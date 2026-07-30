@@ -1,6 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 import requests
+import time
 from datetime import datetime
 
 st.set_page_config(page_title="UB Med Practice Generator", page_icon="🩺", layout="wide")
@@ -14,8 +15,6 @@ if not GEMINI_KEY or not BIN_ID or not JSONBIN_KEY:
     st.stop()
 
 genai.configure(api_key=GEMINI_KEY)
-
-# Using gemini-3.5-flash for NotebookLM-grade reasoning and full document synthesis
 model = genai.GenerativeModel("models/gemini-3.5-flash")
 
 def load_cloud_data():
@@ -31,7 +30,7 @@ def load_cloud_data():
     return {}
 
 st.title("🎓 Student Practice Question Generator")
-st.caption("Select your course and lecture sessions to generate board-style practice questions.")
+st.caption("Select your course and lecture sessions to generate practice questions modeled after your faculty's in-house exam style.")
 
 data = load_cloud_data()
 
@@ -54,6 +53,12 @@ def sort_key(item):
     return (raw_date, title.lower())
 
 sorted_sessions = sorted(sessions_dict.items(), key=sort_key)
+
+# Initialize Session States for Generation Control
+if "is_generating" not in st.session_state:
+    st.session_state.is_generating = False
+if "cancel_requested" not in st.session_state:
+    st.session_state.cancel_requested = False
 
 st.markdown("---")
 col1, col2 = st.columns([1, 2])
@@ -86,7 +91,8 @@ with col1:
         min_value=1, 
         max_value=20, 
         value=5, 
-        step=1
+        step=1,
+        disabled=st.session_state.is_generating
     )
     
     arrange_mode = "By Session"
@@ -94,90 +100,150 @@ with col1:
         arrange_mode = st.radio(
             "Question Arrangement:",
             options=["By Session", "Shuffle"],
-            help="'By Session' groups questions sequentially by lecture. 'Shuffle' mixes them up."
+            help="'By Session' groups questions sequentially by lecture. 'Shuffle' mixes them up.",
+            disabled=st.session_state.is_generating
         )
-        
-    generate_btn = st.button("Generate Practice Quiz", type="primary")
+    
+    st.markdown("---")
+    
+    # Dynamic Button State Management
+    if not st.session_state.is_generating:
+        if st.button("🚀 Generate Practice Quiz", type="primary"):
+            if not selected_session_titles:
+                st.error("Please select at least one lecture session.")
+            else:
+                st.session_state.is_generating = True
+                st.rerun()
+    else:
+        if st.button("🛑 Cancel & Reset Quiz", type="primary"):
+            st.session_state.is_generating = False
+            st.warning("Generation cancelled by user.")
+            st.rerun()
 
 with col2:
     st.subheader("3. Generated Quiz Output")
     
-    if generate_btn:
-        if not selected_session_titles:
-            st.error("Please select at least one lecture session.")
-        else:
-            with st.spinner("Analyzing full lecture slide decks and generating NBME-grade quiz..."):
-                combined_content = ""
-                combined_styles = ""
-                
-                k = len(selected_session_titles)
-                base_quota = num_questions // k
-                remainder = num_questions % k
-                
-                for idx, title in enumerate(selected_session_titles):
-                    quota = base_quota + (1 if idx < remainder else 0)
-                    sess = sessions_dict[title]
+    if st.session_state.is_generating:
+        # Inject JavaScript to warn student if attempting to close/refresh page during generation
+        st.components.v1.html("""
+            <script>
+            window.onbeforeunload = function() {
+                return "A quiz is currently generating. Are you sure you want to leave?";
+            };
+            </script>
+        """, height=0)
+
+        # Progress Feedback Components
+        status_box = st.empty()
+        progress_bar = st.progress(0)
+        output_container = st.empty()
+        
+        status_box.info("⚡ Initializing AI Model and parsing slide text...")
+        progress_bar.progress(10)
+        
+        combined_content = ""
+        combined_styles = ""
+        
+        k = len(selected_session_titles)
+        base_quota = num_questions // k
+        remainder = num_questions % k
+        
+        for idx, title in enumerate(selected_session_titles):
+            quota = base_quota + (1 if idx < remainder else 0)
+            sess = sessions_dict[title]
+            
+            slides_text = sess.get("slides", "")
+            
+            combined_content += f"\n\n=========================================\n"
+            combined_content += f"SESSION: '{title}' (Target Questions: {quota})\n"
+            combined_content += f"=========================================\n"
+            combined_content += slides_text
+            
+            sess_style = sess.get("style_profile")
+            if sess_style:
+                combined_styles += f"\n--- Faculty Writing Style Guidelines for {title} ---\n" + sess_style
+            elif global_course_style:
+                combined_styles += f"\n--- Course-Wide Faculty Writing Style Guidelines ---\n" + global_course_style
+
+        progress_bar.progress(25)
+        status_box.info("🧠 Analyzing faculty writing style guidelines and drafting in-house vignettes...")
+
+        prompt = f"""
+        You are a medical school faculty member writing in-house exam practice questions for students enrolled in {selected_course}.
+        
+        --- CRITICAL GROUNDING & ACCURACY RULES ---
+        1. STRICT SCOPE: All questions, options, and distractors MUST be grounded STRICTLY in facts explicitly stated in the provided lecture slides. Do NOT test on external information or facts not covered in the slides.
+        2. OBJECTIVES ALIGNMENT: Locate the "Session/Lecture Learning Objectives" (usually on early slides) for each session. Ensure every question directly tests a stated session learning objective.
+        3. SINGLE SESSION ASSIGNMENT: Each question corresponds to EXACTLY ONE lecture session.
+        
+        --- SESSION CONTENT & TARGET QUESTION DISTRIBUTION ---
+        {combined_content}
+
+        --- IN-HOUSE FACULTY QUESTION WRITING STYLE ---
+        Emulate the exact tone, vignette structure, stem phrasing, and distractor style outlined below:
+        {combined_styles if combined_styles else "Write clear, high-yield in-house medical school exam questions based strictly on the slides."}
+
+        --- ARRANGEMENT & FORMATTING ---
+        * Total Questions to generate: {num_questions}.
+        * Arrangement Mode requested: '{arrange_mode}'.
+          - If 'By Session': Group all questions for Session 1 together, then Session 2, etc.
+          - If 'Shuffle': Interleave and shuffle the questions across the selected sessions randomly.
+        
+        Format your output clearly into two main sections:
+        
+        SECTION 1: QUESTIONS
+        For each question, explicitly state the corresponding session title before the question stem.
+        Format:
+        Question [Number] ([Session Title])
+        [Vignette / Stem]
+        A) ...
+        B) ...
+        C) ...
+        D) ...
+        E) ...
+
+        SECTION 2: ANSWER KEY & RATIONALES
+        For each question:
+        - Correct Answer
+        - Detailed Rationale explaining why the correct option is right based on slide facts, and why distractors are wrong.
+        - Exact Slide/Page Citation from the session slides.
+        """
+
+        try:
+            full_text = ""
+            response = model.generate_content(prompt, stream=True)
+            
+            progress_bar.progress(40)
+            status_box.info("✍️ Live Streaming: Writing questions & rationales below...")
+            
+            chunk_count = 0
+            for chunk in response:
+                if chunk.text:
+                    full_text += chunk.text
+                    chunk_count += 1
                     
-                    slides_text = sess.get("slides", "")
+                    # Smoothly increment progress bar up to 95% as chunks arrive
+                    current_prog = min(40 + (chunk_count * 2), 95)
+                    progress_bar.progress(current_prog)
                     
-                    combined_content += f"\n\n=========================================\n"
-                    combined_content += f"SESSION: '{title}' (Target Questions: {quota})\n"
-                    combined_content += f"=========================================\n"
-                    combined_content += slides_text
-                    
-                    sess_style = sess.get("style_profile")
-                    if sess_style:
-                        combined_styles += f"\n--- Style Profile for {title} ---\n" + sess_style
-                    elif global_course_style:
-                        combined_styles += f"\n--- Course-Wide Style Profile for {title} ---\n" + global_course_style
+                    output_container.text_area("Copyable Quiz Output:", value=full_text, height=600)
 
-                prompt = f"""
-                You are an expert medical school professor writing board-style practice questions for {selected_course}.
-                
-                --- CRITICAL GROUNDING RULES ---
-                1. STRICT SCOPE: All questions, choices, and distractors MUST be grounded STRICTLY in facts explicitly stated in the provided lecture slides. Do NOT test on external information.
-                2. OBJECTIVES ALIGNMENT: Locate the "Session/Lecture Learning Objectives" (usually on early slides) for each session. Ensure every question directly tests a stated learning objective.
-                3. SINGLE SESSION ASSIGNMENT: Each question corresponds to EXACTLY ONE lecture session.
-                
-                --- SESSION CONTENT & TARGET QUESTION DISTRIBUTION ---
-                {combined_content}
-
-                --- PROFESSOR STYLE PROFILE ---
-                {combined_styles if combined_styles else "Use standard NBME clinical vignette style with 4-5 options."}
-
-                --- ARRANGEMENT & FORMATTING ---
-                * Total Questions to generate: {num_questions}.
-                * Arrangement Mode requested: '{arrange_mode}'.
-                  - If 'By Session': Group all questions for Session 1 together, then Session 2, etc.
-                  - If 'Shuffle': Interleave and shuffle the questions across the selected sessions randomly.
-                
-                Format your output clearly into two main sections:
-                
-                SECTION 1: QUESTIONS
-                For each question, explicitly state the corresponding session title before the question stem.
-                Format:
-                Question [Number] ([Session Title])
-                [Vignette / Stem]
-                A) ...
-                B) ...
-                C) ...
-                D) ...
-                E) ...
-
-                SECTION 2: ANSWER KEY & RATIONALES
-                For each question:
-                - Correct Answer
-                - Detailed Rationale explaining why the correct option is right based on slide facts, and why distractors are wrong.
-                - Exact Slide/Page Citation from the session slides.
-                """
-
-                try:
-                    output_container = st.empty()
-                    full_text = ""
-                    response = model.generate_content(prompt, stream=True)
-                    for chunk in response:
-                        if chunk.text:
-                            full_text += chunk.text
-                            output_container.text_area("Copyable Quiz Output:", value=full_text, height=600)
-                except Exception as e:
-                    st.error(f"Error generating questions: {e}")
+            # Completion Steps
+            progress_bar.progress(100)
+            status_box.success("🎉 Quiz Generation Complete!")
+            time.sleep(1)
+            progress_bar.empty()
+            
+            # Reset states and clear browser leave prompt
+            st.session_state.is_generating = False
+            st.components.v1.html("""
+                <script>
+                window.onbeforeunload = null;
+                </script>
+            """, height=0)
+            
+        except Exception as e:
+            st.session_state.is_generating = False
+            status_box.empty()
+            progress_bar.empty()
+            st.error(f"Error generating questions: {e}")
