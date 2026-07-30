@@ -9,6 +9,7 @@ import random
 
 st.set_page_config(page_title="Faculty Studio", page_icon="👨‍🏫", layout="wide")
 
+# Hide Streamlit form submission helper notes
 st.markdown("""
     <style>
     [data-testid="InputInstructions"] {
@@ -114,7 +115,7 @@ def analyze_style_profile(pqs_text):
 
 @st.dialog("✅ Session Saved Successfully!")
 def show_save_confirmation(session_name, action_type="published"):
-    st.write(f"The session **'{session_name}'** has been successfully {action_type} and synced to the student app.")
+    st.write(f"The lecture session **'{session_name}'** has been successfully {action_type} and is now available to students on the practice app.")
     if st.button("Close Window", type="primary"):
         st.session_state.saved_session_info = None
         st.rerun()
@@ -134,19 +135,21 @@ if st.session_state.saved_session_info:
     info = st.session_state.saved_session_info
     show_save_confirmation(info["title"], info["action"])
 
+# --- LOGIN SCREEN ---
 if not st.session_state.authenticated_course:
-    st.caption("Manage course sessions, upload slide decks, and set style exemplars.")
+    st.caption("Upload lecture slides, manage course materials, and train the AI on your question writing style.")
     
-    tab1, tab2 = st.tabs(["🔒 Enter Existing Course", "➕ Create New Course"])
+    tab1, tab2 = st.tabs(["🔒 Enter Existing Course Workspace", "➕ Create New Course Workspace"])
     
     with tab1:
         if not data:
-            st.info("No active courses created yet. Switch to 'Create New Course' to get started.")
+            st.info("👋 Welcome! No active courses found. Switch to the 'Create New Course Workspace' tab to set up your first course.")
         else:
             with st.form("login_form"):
-                selected_course = st.selectbox("Select Course:", options=list(data.keys()))
-                entered_code = st.text_input("Enter 4-Digit Passcode:", type="password")
-                submit_login = st.form_submit_button("Enter Studio", type="primary")
+                st.markdown("##### 🔑 Access Your Workspace")
+                selected_course = st.selectbox("Select Your Course:", options=list(data.keys()), help="Select the course you want to manage.")
+                entered_code = st.text_input("Enter 4-Digit Course Passcode:", type="password", help="Enter the 4-digit PIN generated when this course was created.")
+                submit_login = st.form_submit_button("Enter Studio Workspace", type="primary")
                 
                 if submit_login:
                     stored_code = str(data[selected_course].get("passcode"))
@@ -155,18 +158,20 @@ if not st.session_state.authenticated_course:
                         st.session_state.show_delete_course_confirm = False
                         st.rerun()
                     else:
-                        st.error("Incorrect passcode. Access denied.")
+                        st.error("❌ Incorrect passcode. Please try again or ask your course director.")
 
     with tab2:
         with st.form("create_course_form"):
-            new_course_name = st.text_input("Course Name (e.g., 'Microbiology Fall 2026')")
+            st.markdown("##### 🚀 Create a New Course")
+            st.caption("Creating a workspace generates a unique 4-digit passcode for you and co-instructors.")
+            new_course_name = st.text_input("Course Name:", placeholder="e.g., Gastrointestinal System (GI) - Fall 2026")
             submit_create = st.form_submit_button("Generate Course Workspace", type="primary")
             
             if submit_create:
                 if not new_course_name.strip():
-                    st.warning("Please enter a course name.")
+                    st.warning("⚠️ Please enter a course name.")
                 elif new_course_name in data:
-                    st.warning("A course with this name already exists.")
+                    st.warning("⚠️ A course with this name already exists. Please choose a unique title.")
                 else:
                     generated_passcode = str(random.randint(1000, 9999))
                     data[new_course_name] = {
@@ -185,8 +190,8 @@ if not st.session_state.authenticated_course:
             nc_name = st.session_state.newly_created_course
             nc_code = st.session_state.newly_created_passcode
             
-            st.success(f"🎉 Course '{nc_name}' successfully created!")
-            st.info(f"🔐 **Assigned 4-Digit Passcode:** `{nc_code}` (Save this to share with co-instructors).")
+            st.success(f"🎉 Workspace for '{nc_name}' created successfully!")
+            st.info(f"🔐 **Your Assigned Passcode:** `{nc_code}`\n\n*Save this 4-digit code! You and co-faculty will need it to log into this course workspace in the future.*")
             
             if st.button(f"🚀 Enter '{nc_name}' Workspace Now", type="primary"):
                 st.session_state.authenticated_course = nc_name
@@ -194,6 +199,7 @@ if not st.session_state.authenticated_course:
                 st.session_state.newly_created_passcode = None
                 st.rerun()
 
+# --- WORKSPACE DASHBOARD ---
 else:
     active_course = st.session_state.authenticated_course
     course_data = data.get(active_course)
@@ -205,7 +211,7 @@ else:
     col_a, col_b, col_c = st.columns([2, 1, 1])
     with col_a:
         st.subheader(f"Active Workspace: **{active_course}**")
-        st.caption(f"🔐 Course Passcode: **{course_data.get('passcode')}**")
+        st.caption(f"🔐 Passcode for co-instructors: **{course_data.get('passcode')}**")
     with col_b:
         if st.button("🔒 Exit Workspace"):
             st.session_state.authenticated_course = None
@@ -216,7 +222,7 @@ else:
             st.session_state.show_delete_course_confirm = True
 
     if st.session_state.show_delete_course_confirm:
-        st.warning(f"⚠️ **Are you sure you want to permanently delete '{active_course}'?** This action will erase all published sessions.")
+        st.warning(f"⚠️ **Are you sure you want to permanently delete '{active_course}'?** This erases all published sessions for students.")
         col_yes, col_no = st.columns([1, 4])
         with col_yes:
             if st.button("🚨 Yes, Delete Permanently", type="primary"):
@@ -224,7 +230,7 @@ else:
                 save_cloud_data(data)
                 st.session_state.authenticated_course = None
                 st.session_state.show_delete_course_confirm = False
-                st.success(f"'{active_course}' has been completely removed.")
+                st.success(f"'{active_course}' has been removed.")
                 st.rerun()
         with col_no:
             if st.button("Cancel"):
@@ -233,64 +239,95 @@ else:
 
     st.markdown("---")
     
+    # --- FACULTY INSTRUCTIONS GUIDE BANNER ---
+    with st.container():
+        st.markdown("""
+        ### 💡 Quick Start Guide
+        1. **Course Exam Style (Recommended):** Expand the block below to upload a general practice exam/question bank. The AI will learn your exam writing style and apply it across all lectures by default.
+        2. **Publish Lectures:** Go to **➕ Add New Session**, upload your slide deck (`PDF` or `PowerPoint`), set the date held, and select your practice question reference choice.
+        3. **Edit or Update:** Use **🛠️ View/Edit Published Sessions** to update slide decks, adjust session dates, or upload custom exam sets anytime.
+        """)
+    
+    st.markdown("---")
+    
     # --- COURSE-WIDE GENERAL PQ UPLOADER SECTION ---
-    with st.expander("🎓 Course-Wide Master Practice Exam (Applies to all sessions by default)"):
-        master_fn = course_data.get("global_pqs_filename", "")
+    master_fn = course_data.get("global_pqs_filename", "")
+    course_has_master = bool(master_fn)
+    
+    with st.expander(f"🎓 Course-Wide Master Practice Exam ({'🟢 Active: ' + master_fn if course_has_master else '⚠️ None Uploaded Yet'})", expanded=not course_has_master):
+        st.info("💡 **How this works:** Most courses use one general end-of-block practice exam or NBME question set. Uploading it here allows all current and future lecture sessions to inherit your writing style automatically!")
+        
         if master_fn:
-            st.success(f"📎 **Current Course-Wide Practice Exam:** `{master_fn}`")
-        else:
-            st.info("ℹ️ No course-wide practice exam attached yet. Uploading one allows all sessions to inherit the same exam writing style.")
-            
-        up_master_file = st.file_uploader("Upload Course-Wide Practice Exam (PDF or Word):", type=["pdf", "docx"], key="course_master_pq")
+            st.success(f"📎 **Currently Active Master Exam File:** `{master_fn}`")
+        
+        up_master_file = st.file_uploader(
+            "Upload Course-Wide Master Exam File (PDF or Word):", 
+            type=["pdf", "docx"], 
+            key="course_master_pq",
+            help="Upload a PDF or Word doc containing sample NBME-style board questions, quizzes, or past exams."
+        )
+        
         if st.button("💾 Save Course-Wide Practice Exam", type="primary"):
             if up_master_file:
-                with st.spinner("Extracting text and analyzing master course exam style..."):
+                with st.spinner("Extracting text and analyzing master exam writing style..."):
                     m_text = extract_text_from_file(up_master_file)
                     m_style = analyze_style_profile(m_text)
                     course_data["global_pqs_filename"] = up_master_file.name
                     course_data["global_pqs_text"] = m_text
                     course_data["global_style_profile"] = m_style
                     save_cloud_data(data)
-                    st.success("Updated Course-Wide Practice Exam!")
+                    st.success(f"Successfully uploaded and analyzed '{up_master_file.name}' as the course master exam!")
                     st.rerun()
+            else:
+                st.warning("Please choose a file to upload before saving.")
 
     st.markdown("---")
     t_add, t_manage = st.tabs(["➕ Add New Session", "🛠️ View/Edit Published Sessions"])
     
-    master_pq_name = course_data.get("global_pqs_filename", "")
-    course_has_master = bool(master_pq_name)
-    
-    # Dynamic option labels for PQ source selection
-    opt_master = f"Use Course-Wide Master Exam ({master_pq_name})" if course_has_master else "Use Course-Wide Master Exam (⚠️ None uploaded yet)"
+    # Dynamic radio option strings with clear UI indicators
+    opt_master = f"Use Course-Wide Master Exam ({master_fn})" if course_has_master else "Use Course-Wide Master Exam (⚠️ No master exam uploaded yet)"
     opt_custom = "Upload Custom Practice Question File for This Session Specifically"
     
+    # --- TAB 1: ADD NEW SESSION ---
     with t_add:
-        session_title = st.text_input("Session Title (e.g., 'Gram-Positive Cocci')")
-        session_date = st.date_input("Session Date Held", value=datetime.date.today(), format="MM/DD/YYYY")
-        slides_file = st.file_uploader("Upload Lecture Slides (PDF or PowerPoint)", type=["pdf", "pptx"], key="add_slides")
+        st.markdown("#### Add Lecture Session")
+        st.caption("Fill in session details and upload the lecture slide deck for students.")
         
-        st.markdown("#### Practice Question Reference Style")
+        session_title = st.text_input("1. Session / Lecture Title:", placeholder="e.g., Physiology of Salivary and Gastric Secretion", help="Enter the exact lecture name as it appears on the schedule.")
+        session_date = st.date_input("2. Date Session Was/Will Be Held:", value=datetime.date.today(), format="MM/DD/YYYY", help="Dates are formatted as MM/DD/YYYY and used to sort lectures chronologically for students.")
+        slides_file = st.file_uploader("3. Upload Lecture Slides (PDF or PowerPoint):", type=["pdf", "pptx"], key="add_slides", help="Upload the official lecture slide deck. Text inside slides will be used as the exclusive truth source for question generation.")
+        
+        st.markdown("---")
+        st.markdown("#### 4. Question Writing Style Reference")
+        st.caption("Select which exam set the AI model should analyze to learn vignette length, stem phrasing, and distractor difficulty:")
+        
         pq_source_choice = st.radio(
-            "Select reference practice question set for AI model style learning:",
+            "Select Reference Source:",
             options=[opt_master, opt_custom],
             key="add_pq_choice"
         )
         
         session_custom_pq_file = None
         if pq_source_choice == opt_custom:
-            session_custom_pq_file = st.file_uploader("Upload Custom Session Practice Questions (PDF or Word - Required):", type=["pdf", "docx"], key="add_session_custom_pq")
+            session_custom_pq_file = st.file_uploader(
+                "Upload Session-Specific Practice Question File (PDF or Word - Required):", 
+                type=["pdf", "docx"], 
+                key="add_session_custom_pq",
+                help="Upload a custom exam or quiz set specific to this lecture."
+            )
 
-        if st.button("Save & Publish Session", type="primary"):
-            if not session_title:
-                st.warning("Please enter a session title.")
+        st.markdown("---")
+        if st.button("🚀 Save & Publish Session to Students", type="primary"):
+            if not session_title.strip():
+                st.error("❌ Action Required: Please enter a Session Title.")
             elif not slides_file:
-                st.warning("Please upload a slide file (PDF or PPTX).")
+                st.error("❌ Action Required: Please upload a Lecture Slide PDF or PowerPoint file.")
             elif pq_source_choice == opt_master and not course_has_master:
-                st.error("❌ Cannot save session: No course-wide practice exam has been uploaded yet. Please upload one under 'Course-Wide Master Practice Exam' above or select 'Upload Custom Practice Question File'.")
+                st.error("❌ Action Required: You selected 'Use Course-Wide Master Exam', but no master exam file has been uploaded for this course yet. Either upload one under 'Course-Wide Master Practice Exam' above, or select 'Upload Custom Practice Question File'.")
             elif pq_source_choice == opt_custom and not session_custom_pq_file:
-                st.error("❌ Cannot save session: You chose to use a custom practice question set for this session, but haven't uploaded a file.")
+                st.error("❌ Action Required: You chose to use a custom practice question set for this session, but have not attached a file.")
             else:
-                with st.spinner("Processing files and publishing session..."):
+                with st.spinner("Processing slides, setting up style profile, and syncing to cloud..."):
                     slides_text = extract_text_from_file(slides_file)
                     date_str = session_date.strftime("%Y-%m-%d")
                     
@@ -301,7 +338,7 @@ else:
                         pq_mode = "custom"
                     else:
                         pqs_text = ""
-                        pqs_fn = master_pq_name
+                        pqs_fn = master_fn
                         style_prof = course_data.get("global_style_profile", "")
                         pq_mode = "course_master"
 
@@ -319,11 +356,13 @@ else:
                     st.session_state.saved_session_info = {"title": session_title, "action": "published"}
                     st.rerun()
 
+    # --- TAB 2: MANAGE SESSIONS ---
     with t_manage:
         sessions = course_data.get("sessions", {})
         if not sessions:
-            st.info("No published sessions in this course yet.")
+            st.info("ℹ️ No published sessions in this course workspace yet. Use the '➕ Add New Session' tab above to publish your first lecture!")
         else:
+            st.caption("Click any session below to edit its title, date, slide deck, or question style settings:")
             for s_title in list(sessions.keys()):
                 sess_info = sessions[s_title]
                 raw_date = sess_info.get("date", "N/A")
@@ -339,11 +378,11 @@ else:
                     mode = sess_info.get("pq_mode", "custom")
                     pq_fn_display = sess_info.get("pqs_filename", "Master Set" if mode == "course_master" else "N/A")
                     
-                    st.write(f"**Date Held:** {display_date}")
-                    st.write(f"**PQ Style Reference:** {'🌐 Course-Wide Master Set' if mode == 'course_master' else '📄 Custom Session Set'} (`{pq_fn_display}`)")
+                    st.write(f"**Date Held:** `{display_date}`")
+                    st.write(f"**Reference Style Source:** {'🌐 Course-Wide Master Exam' if mode == 'course_master' else '📄 Custom Session Exam'} (`{pq_fn_display}`)")
                     
                     st.markdown("---")
-                    st.markdown("#### ✏️ Edit Session Details")
+                    st.markdown("##### ✏️ Edit Session Details")
                     
                     default_date = datetime.date.today()
                     if raw_date != "N/A":
@@ -352,18 +391,19 @@ else:
                         except ValueError:
                             pass
                             
-                    edit_title = st.text_input("Session Title", value=s_title, key=f"edit_title_{s_title}")
-                    edit_date = st.date_input("Session Date Held", value=default_date, format="MM/DD/YYYY", key=f"edit_date_{s_title}")
+                    edit_title = st.text_input("Session Title:", value=s_title, key=f"edit_title_{s_title}")
+                    edit_date = st.date_input("Session Date Held:", value=default_date, format="MM/DD/YYYY", key=f"edit_date_{s_title}")
                     
                     curr_slides_fn = sess_info.get("slides_filename", "[Uploaded file]")
-                    st.markdown("**Replace Lecture Slides (PDF/PPTX - Optional)**")
+                    st.markdown("**Lecture Slides File:**")
                     st.caption(f"📎 **Currently attached slide deck:** `{curr_slides_fn}`")
-                    new_slides_file = st.file_uploader("Upload replacement slides:", type=["pdf", "pptx"], key=f"edit_slides_{s_title}")
+                    new_slides_file = st.file_uploader("Upload new slide file to replace (PDF or PPTX - Optional):", type=["pdf", "pptx"], key=f"edit_slides_{s_title}")
                     
+                    st.markdown("---")
                     st.markdown("**Practice Question Style Reference**")
                     current_mode_index = 0 if mode == "course_master" else 1
                     edit_pq_choice = st.radio(
-                        "Select practice question set source:",
+                        "Select Reference Source:",
                         options=[opt_master, opt_custom],
                         index=current_mode_index,
                         key=f"edit_pq_choice_{s_title}"
@@ -372,19 +412,20 @@ else:
                     edit_custom_pq_file = None
                     if edit_pq_choice == opt_custom:
                         if sess_info.get("pqs_filename"):
-                            st.caption(f"📎 **Currently attached session PQ:** `{sess_info.get('pqs_filename')}`")
-                        edit_custom_pq_file = st.file_uploader("Upload new session practice question file (PDF/DOCX):", type=["pdf", "docx"], key=f"edit_pqs_{s_title}")
+                            st.caption(f"📎 **Currently attached session exam:** `{sess_info.get('pqs_filename')}`")
+                        edit_custom_pq_file = st.file_uploader("Upload replacement session practice question file (PDF/DOCX - Optional):", type=["pdf", "docx"], key=f"edit_pqs_{s_title}")
 
+                    st.markdown("---")
                     col_save, col_del = st.columns([1, 1])
                     
                     with col_save:
-                        if st.button("💾 Save Session Changes", key=f"save_{s_title}", type="primary"):
+                        if st.button("💾 Save Changes to Session", key=f"save_{s_title}", type="primary"):
                             if edit_pq_choice == opt_master and not course_has_master:
-                                st.error("❌ Cannot save session: No course-wide practice exam has been uploaded yet. Please upload one above.")
+                                st.error("❌ Action Required: No course-wide practice exam has been uploaded yet. Upload one above before choosing this option.")
                             elif edit_pq_choice == opt_custom and not edit_custom_pq_file and not sess_info.get("pqs"):
-                                st.error("❌ Cannot save session: A custom practice question file is required for this setting.")
+                                st.error("❌ Action Required: A custom practice question file is required for this setting.")
                             else:
-                                with st.spinner("Syncing session updates..."):
+                                with st.spinner("Syncing updates to database..."):
                                     updated_date_str = edit_date.strftime("%Y-%m-%d")
                                     
                                     if new_slides_file:
@@ -406,7 +447,7 @@ else:
                                         updated_mode = "custom"
                                     else:
                                         updated_pqs = ""
-                                        updated_pqs_fn = master_pq_name
+                                        updated_pqs_fn = master_fn
                                         updated_style = course_data.get("global_style_profile", "")
                                         updated_mode = "course_master"
                                     
@@ -431,5 +472,5 @@ else:
                         if st.button(f"🗑️ Delete Session", key=f"del_{s_title}"):
                             del course_data["sessions"][s_title]
                             save_cloud_data(data)
-                            st.success(f"Deleted '{s_title}'.")
+                            st.success(f"Session '{s_title}' deleted.")
                             st.rerun()
