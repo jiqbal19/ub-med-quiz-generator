@@ -78,15 +78,28 @@ if not st.session_state.authenticated_course:
                     "sessions": {}
                 }
                 save_data(data)
-                st.success(f"Course created! 🎉 Passcode for {new_course_name}: **{generated_passcode}**")
-                st.info("Save this passcode to share with co-instructors.")
+                st.session_state.newly_created_course = new_course_name
+                st.session_state.newly_created_passcode = generated_passcode
+                st.rerun()
+
+        if "newly_created_course" in st.session_state and st.session_state.newly_created_course:
+            nc_name = st.session_state.newly_created_course
+            nc_code = st.session_state.newly_created_passcode
+            
+            st.success(f"🎉 Course '{nc_name}' successfully created!")
+            st.info(f"🔐 **Assigned 4-Digit Passcode:** `{nc_code}` (Save this to share with co-instructors).")
+            
+            if st.button(f"🚀 Enter '{nc_name}' Workspace Now", type="primary"):
+                st.session_state.authenticated_course = nc_name
+                st.session_state.newly_created_course = None
+                st.session_state.newly_created_passcode = None
+                st.rerun()
 
 # --- AUTHENTICATED FACULTY DASHBOARD ---
 else:
     active_course = st.session_state.authenticated_course
     course_data = data.get(active_course)
 
-    # Fallback if course was deleted external to session
     if not course_data:
         st.session_state.authenticated_course = None
         st.rerun()
