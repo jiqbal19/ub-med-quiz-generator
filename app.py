@@ -10,6 +10,33 @@ from docx import Document
 
 st.set_page_config(page_title="UB Med Practice Generator", page_icon="🩺", layout="wide")
 
+# Custom CSS for compact vertical layout, word wrapping, and top-right toolbar alignment inside output window
+st.markdown("""
+    <style>
+        .block-container { padding-top: 1.5rem; padding-bottom: 1rem; }
+        h1 { font-size: 1.8rem !important; margin-bottom: 0.2rem !important; }
+        h3 { font-size: 1.1rem !important; margin-top: 0.5rem !important; margin-bottom: 0.3rem !important; }
+        .stCaption { margin-bottom: 0.4rem !important; }
+        hr { margin-top: 0.5rem !important; margin-bottom: 0.5rem !important; }
+        
+        /* Force line/word wrapping in text areas and code blocks */
+        code, pre, div[data-baseweb="textarea"] textarea {
+            white-space: pre-wrap !important;
+            word-wrap: break-word !important;
+            overflow-x: hidden !important;
+        }
+        
+        /* Toolbar button styling within the output card */
+        .output-toolbar {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: -0.5rem;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 GEMINI_KEY = str(st.secrets.get("GEMINI_API_KEY", "")).strip()
 BIN_ID = str(st.secrets.get("JSONBIN_BIN_ID", "")).strip()
 JSONBIN_KEY = str(st.secrets.get("JSONBIN_API_KEY", "")).strip()
@@ -22,10 +49,8 @@ if not BIN_ID or not JSONBIN_KEY:
     st.error("🔑 JSONBin credentials missing in Streamlit Secrets!")
     st.stop()
 
-# Initialize Google GenAI client
 client = genai.Client(api_key=GEMINI_KEY)
 
-# Use official latest alias pointers
 PRIMARY_MODEL = "gemini-flash-latest"
 FALLBACK_MODELS = ["gemini-pro-latest"]
 
@@ -55,7 +80,7 @@ def create_docx(text_content):
     return bio.getvalue()
 
 st.title("🎓 Student Practice Question Generator")
-st.caption("Select your course and lecture sessions to generate practice questions modeled after your faculty's in-house exam style.")
+st.caption("Select your course and lecture sessions to generate practice questions modeled after in-house exam style.")
 
 data = load_cloud_data()
 
@@ -83,7 +108,6 @@ def sort_key(item):
 
 sorted_sessions = sorted(sessions_dict.items(), key=sort_key)
 
-# Session State Initialization
 if "is_generating" not in st.session_state:
     st.session_state.is_generating = False
 if "generated_quiz" not in st.session_state:
@@ -95,62 +119,62 @@ col1, col2 = st.columns([1, 2])
 with col1:
     st.subheader("1. Select Lecture Sessions")
     
-    # 1. Select All Checkbox
     select_all = st.checkbox(
         "Select All Sessions", 
         key=f"select_all_{selected_course}",
         disabled=st.session_state.is_generating
     )
-    st.caption("Check the sessions you want to practice:")
     
     selected_session_titles = []
     
-    for title, details in sorted_sessions:
-        raw_date = details.get("date", "")
-        formatted_date = ""
-        if raw_date:
-            try:
-                dt = datetime.strptime(raw_date, "%Y-%m-%d")
-                formatted_date = dt.strftime("%m/%d/%Y") + " - "
-            except ValueError:
-                formatted_date = ""
-        
-        display_label = f"{formatted_date}{title}"
-        checkbox_val = select_all or st.session_state.get(f"cb_{selected_course}_{title}", False)
-        
-        if st.checkbox(
-            display_label, 
-            value=select_all,
-            key=f"cb_{selected_course}_{title}",
-            disabled=st.session_state.is_generating
-        ):
-            selected_session_titles.append(title)
+    # Scrollable container for lecture sessions to keep Generate button above the fold
+    with st.container(height=220):
+        for title, details in sorted_sessions:
+            raw_date = details.get("date", "")
+            formatted_date = ""
+            if raw_date:
+                try:
+                    dt = datetime.strptime(raw_date, "%Y-%m-%d")
+                    formatted_date = dt.strftime("%m/%d/%Y") + " - "
+                except ValueError:
+                    formatted_date = ""
+            
+            display_label = f"{formatted_date}{title}"
+            
+            if st.checkbox(
+                display_label, 
+                value=select_all,
+                key=f"cb_{selected_course}_{title}",
+                disabled=st.session_state.is_generating
+            ):
+                selected_session_titles.append(title)
             
     st.markdown("---")
     st.subheader("2. Quiz Parameters")
     
-    num_questions = st.number_input(
-        "Number of questions:", 
-        min_value=1, 
-        max_value=20, 
-        value=5, 
-        step=1,
-        disabled=st.session_state.is_generating
-    )
-    
-    arrange_mode = "By Session"
-    if len(selected_session_titles) >= 2:
-        arrange_mode = st.radio(
-            "Question Arrangement:",
-            options=["By Session", "Shuffle"],
-            help="'By Session' groups questions sequentially by lecture. 'Shuffle' mixes them up.",
+    p_col1, p_col2 = st.columns([1, 1])
+    with p_col1:
+        num_questions = st.number_input(
+            "Questions:", 
+            min_value=1, 
+            max_value=20, 
+            value=5, 
+            step=1,
             disabled=st.session_state.is_generating
         )
+    with p_col2:
+        arrange_mode = "By Session"
+        if len(selected_session_titles) >= 2:
+            arrange_mode = st.radio(
+                "Arrangement:",
+                options=["By Session", "Shuffle"],
+                disabled=st.session_state.is_generating
+            )
     
     st.markdown("---")
     
     if not st.session_state.is_generating:
-        if st.button("🚀 Generate Practice Quiz", type="primary"):
+        if st.button("🚀 Generate Practice Quiz", type="primary", use_container_width=True):
             if not selected_session_titles:
                 st.error("Please select at least one lecture session.")
             else:
@@ -158,7 +182,7 @@ with col1:
                 st.session_state.generated_quiz = ""
                 st.rerun()
     else:
-        if st.button("🛑 Cancel & Reset Quiz", type="primary"):
+        if st.button("🛑 Cancel & Reset Quiz", type="primary", use_container_width=True):
             st.session_state.is_generating = False
             st.warning("Generation cancelled.")
             st.rerun()
@@ -296,7 +320,7 @@ with col2:
                     chunk_count += 1
                     current_prog = min(60 + (chunk_count * 2), 98)
                     progress_bar.progress(current_prog)
-                    output_container.text_area("Live Stream Output:", value=full_text, height=600)
+                    output_container.text_area("Live Stream Output:", value=full_text, height=480)
 
             st.session_state.generated_quiz = full_text
 
@@ -328,34 +352,28 @@ with col2:
     elif st.session_state.generated_quiz:
         st.success("🎉 Practice Quiz Generated!")
         
-        # 2. Copy Button (native Streamlit copy icon inside code window)
-        st.caption("📋 Click the copy icon in the top right of the block below to copy the full output:")
-        st.code(st.session_state.generated_quiz, language="markdown")
+        # Download buttons placed inside the toolbar row, aligned next to the native code copy button
+        tb_col1, tb_col2, tb_col3 = st.columns([6, 1.5, 1.5])
         
-        st.markdown("---")
-        st.subheader("📥 Download Options")
-        
-        d_col1, d_col2 = st.columns(2)
-        
-        # 3. Download as .txt
-        with d_col1:
+        with tb_col2:
             st.download_button(
-                label="📄 Download as .TXT",
+                label="📄 .TXT",
                 data=st.session_state.generated_quiz,
                 file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.txt",
                 mime="text/plain",
                 use_container_width=True
             )
             
-        # 3. Download as .docx
-        with d_col2:
+        with tb_col3:
             docx_data = create_docx(st.session_state.generated_quiz)
             st.download_button(
-                label="📝 Download as .DOCX (Word)",
+                label="📝 .DOCX",
                 data=docx_data,
                 file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 use_container_width=True
             )
+            
+        st.code(st.session_state.generated_quiz, language="markdown")
     else:
         st.info("Select options on the left and click 'Generate Practice Quiz' to create questions.")
