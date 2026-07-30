@@ -1,5 +1,7 @@
 import streamlit as st
 import pypdf
+from pptx import Presentation
+import docx
 import requests
 import google.generativeai as genai
 import datetime
@@ -26,7 +28,6 @@ if not BIN_ID or not JSONBIN_KEY or not GEMINI_KEY:
     st.stop()
 
 genai.configure(api_key=GEMINI_KEY)
-# Fast, low-latency model for quick background style extraction
 style_analyzer_model = genai.GenerativeModel("models/gemini-2.5-flash-lite")
 
 def load_cloud_data():
@@ -52,13 +53,48 @@ def save_cloud_data(data):
     except Exception as e:
         st.error(f"Failed to sync with cloud database: {e}")
 
-def extract_text_from_pdf(pdf_file):
-    pdf_reader = pypdf.PdfReader(pdf_file)
+def extract_text_from_file(uploaded_file):
+    """Universal text extractor for PDF, PPTX, and DOCX files."""
+    if not uploaded_file:
+        return ""
+    
+    filename = uploaded_file.name.lower()
     text = ""
-    for page_num, page in enumerate(pdf_reader.pages, start=1):
-        extracted = page.extract_text()
-        if extracted:
-            text += f"\n--- Slide/Page {page_num} ---\n" + extracted
+    
+    try:
+        if filename.endswith(".pdf"):
+            pdf_reader = pypdf.PdfReader(uploaded_file)
+            for page_num, page in enumerate(pdf_reader.pages, start=1):
+                extracted = page.extract_text()
+                if extracted:
+                    text += f"\n--- Page/Slide {page_num} ---\n" + extracted
+                    
+        elif filename.endswith(".pptx"):
+            prs = Presentation(uploaded_file)
+            for slide_num, slide in enumerate(prs.slides, start=1):
+                slide_words = []
+                for shape in slide.shapes:
+                    if hasattr(shape, "text") and shape.text:
+                        slide_words.append(shape.text)
+                if slide_words:
+                    text += f"\n--- Slide {slide_num} ---\n" + "\n".join(slide_words)
+                    
+        elif filename.endswith(".docx"):
+            doc = docx.Document(uploaded_file)
+            p_text = [p.text for p in doc.paragraphs if p.text.strip()]
+            
+            # Also extract text from tables inside Word docs if present
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                    if row_text:
+                        p_text.append(" | ".join(row_text))
+                        
+            text = "\n".join(p_text)
+            
+    except Exception as e:
+        st.error(f"Error reading '{uploaded_file.name}': {e}")
+        
     return text
 
 def analyze_style_profile(pqs_text):
@@ -192,20 +228,19 @@ else:
     with t_add:
         session_title = st.text_input("Session Title (e.g., 'Gram-Positive Cocci')")
         session_date = st.date_input("Session Date Held", value=datetime.date.today(), format="MM/DD/YYYY")
-        slides_file = st.file_uploader("Upload Lecture Slides (PDF)", type=["pdf"], key="add_slides")
-        pqs_file = st.file_uploader("Upload Practice Questions/Answers (PDF - Optional)", type=["pdf"], key="add_pqs")
+        slides_file = st.file_uploader("Upload Lecture Slides (PDF or PowerPoint)", type=["pdf", "pptx"], key="add_slides")
+        pqs_file = st.file_uploader("Upload Practice Questions/Answers (PDF or Word - Optional)", type=["pdf", "docx"], key="add_pqs")
         
         if st.button("Save & Publish Session", type="primary"):
             if not session_title:
                 st.warning("Please enter a session title.")
             elif not slides_file:
-                st.warning("Please upload a slide PDF.")
+                st.warning("Please upload a slide file (PDF or PPTX).")
             else:
-                with st.spinner("Extracting PDF text and analyzing style profile..."):
-                    slides_text = extract_text_from_pdf(slides_file)
-                    pqs_text = extract_text_from_pdf(pqs_file) if pqs_file else ""
+                with st.spinner("Extracting file text and analyzing style profile..."):
+                    slides_text = extract_text_from_file(slides_file)
+                    pqs_text = extract_text_from_file(pqs_file) if pqs_file else ""
                     
-                    # Run pre-analysis once during save
                     style_profile = analyze_style_profile(pqs_text) if pqs_text else "Standard NBME clinical vignette style with 4-5 choices."
                     date_str = session_date.strftime("%Y-%m-%d")
                     
@@ -258,19 +293,19 @@ else:
                     
                     curr_slides_fn = sess_info.get("slides_filename")
                     if not curr_slides_fn or curr_slides_fn == "Uploaded Slide PDF":
-                        curr_slides_fn = "[Uploaded PDF - Name not recorded]"
+                        curr_slides_fn = "[Uploaded file - Name not recorded]"
                     
-                    st.markdown("**Replace Lecture Slides (PDF - Optional)**")
+                    st.markdown("**Replace Lecture Slides (PDF or PowerPoint - Optional)**")
                     st.caption(f"📎 **Currently attached file:** `{curr_slides_fn}`")
-                    new_slides_file = st.file_uploader("Upload new slide PDF to replace:", type=["pdf"], key=f"edit_slides_{s_title}")
+                    new_slides_file = st.file_uploader("Upload new slide file (PDF/PPTX) to replace:", type=["pdf", "pptx"], key=f"edit_slides_{s_title}")
                     
                     curr_pqs_fn = sess_info.get("pqs_filename", "")
-                    st.markdown("**Replace Practice Questions (PDF - Optional)**")
+                    st.markdown("**Replace Practice Questions (PDF or Word - Optional)**")
                     if curr_pqs_fn:
                         st.caption(f"📎 **Currently attached file:** `{curr_pqs_fn}`")
                     else:
                         st.caption("⚠️ *No custom practice question file attached.*")
-                    new_pqs_file = st.file_uploader("Upload new practice question PDF to replace:", type=["pdf"], key=f"edit_pqs_{s_title}")
+                    new_pqs_file = st.file_uploader("Upload new practice question file (PDF/DOCX) to replace:", type=["pdf", "docx"], key=f"edit_pqs_{s_title}")
                     
                     col_save, col_del = st.columns([1, 1])
                     
@@ -279,17 +314,17 @@ else:
                             with st.spinner("Syncing changes..."):
                                 updated_date_str = edit_date.strftime("%Y-%m-%d")
                                 
-                                # Process slide PDF
+                                # Process slide file
                                 if new_slides_file:
-                                    updated_slides = extract_text_from_pdf(new_slides_file)
+                                    updated_slides = extract_text_from_file(new_slides_file)
                                     updated_slides_fn = new_slides_file.name
                                 else:
                                     updated_slides = sess_info.get("slides", "")
                                     updated_slides_fn = sess_info.get("slides_filename", curr_slides_fn)
                                     
-                                # Re-analyze style ONLY IF a new PQ PDF was actually uploaded
+                                # Re-analyze style ONLY IF a new PQ file was actually uploaded
                                 if new_pqs_file:
-                                    updated_pqs = extract_text_from_pdf(new_pqs_file)
+                                    updated_pqs = extract_text_from_file(new_pqs_file)
                                     updated_pqs_fn = new_pqs_file.name
                                     updated_style = analyze_style_profile(updated_pqs)
                                 else:
