@@ -5,7 +5,6 @@ import os
 
 st.set_page_config(page_title="UB Med Practice Generator", page_icon="🩺", layout="wide")
 
-# Persistent Storage File Path
 DATA_FILE = "courses_data.json"
 
 def load_data():
@@ -17,8 +16,6 @@ def load_data():
             return {}
     return {}
 
-data = load_data()
-
 # API Setup
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 if not api_key:
@@ -28,9 +25,11 @@ if not api_key:
 genai.configure(api_key=api_key)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
-# --- STUDENT QUESTION GENERATOR ---
 st.title("🎓 Student Practice Question Generator")
 st.caption("Select your course and lecture sessions to generate board-style practice questions.")
+
+# Read fresh data on every load
+data = load_data()
 
 if not data:
     st.info("No courses are currently available. Please check back after faculty publish sessions.")
@@ -39,11 +38,11 @@ if not data:
 # 1. Course Selection
 selected_course = st.selectbox("Select Course:", options=list(data.keys()))
 
-course_info = data[selected_course]
+course_info = data.get(selected_course, {})
 sessions = course_info.get("sessions", {})
 
 if not sessions:
-    st.warning(f"No lecture sessions available for {selected_course} yet.")
+    st.warning(f"No lecture sessions available for '{selected_course}' yet.")
     st.stop()
 
 st.markdown("---")
