@@ -115,7 +115,6 @@ if "is_generating" not in st.session_state:
 if "generated_quiz" not in st.session_state:
     st.session_state.generated_quiz = ""
 
-# Freeze parameters if a quiz is already active or generating
 quiz_exists = bool(st.session_state.generated_quiz)
 is_active = st.session_state.is_generating or quiz_exists
 
@@ -231,7 +230,6 @@ with col2:
 
         status_box = st.empty()
         progress_bar = st.progress(0)
-        action_bar = st.empty()
         output_container = st.empty()
         
         status_box.info("⚡ Preparing full slide decks for AI context...")
@@ -363,39 +361,16 @@ with col2:
                     progress_bar.progress(current_prog)
                     output_container.text_area("Live Stream Output:", value=full_text, height=450)
 
-            st.session_state.generated_quiz = full_text
-            st.session_state.is_generating = False
-
             for g_f in uploaded_files:
                 try:
                     client.files.delete(name=g_f.name)
                 except Exception:
                     pass
 
-            progress_bar.progress(100)
-            status_box.success("🎉 Practice Quiz Generated!")
-            
-            with action_bar.container():
-                tb_col1, tb_col2, tb_col3 = st.columns([6, 1.5, 1.5])
-                with tb_col2:
-                    st.download_button(
-                        label="📄 .TXT",
-                        data=full_text,
-                        file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.txt",
-                        mime="text/plain",
-                        use_container_width=True
-                    )
-                with tb_col3:
-                    docx_data = create_docx(full_text)
-                    st.download_button(
-                        label="📝 .DOCX",
-                        data=docx_data,
-                        file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.docx",
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                        use_container_width=True
-                    )
-            
-            output_container.code(full_text, language="markdown")
+            # Store generated text, lower the generation flag, and force a clean rerun to display static result
+            st.session_state.generated_quiz = full_text
+            st.session_state.is_generating = False
+            st.rerun()
 
         except Exception as e:
             for g_f in uploaded_files:
@@ -410,7 +385,7 @@ with col2:
             st.error(f"Error generating questions: {e}")
 
     elif st.session_state.generated_quiz:
-        st.success("🎉 Practice Quiz Frozen & Active")
+        st.success("🎉 Practice Quiz Active")
         
         tb_col1, tb_col2, tb_col3 = st.columns([6, 1.5, 1.5])
         
