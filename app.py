@@ -10,7 +10,7 @@ from docx import Document
 
 st.set_page_config(page_title="UB Med Practice Generator", page_icon="🩺", layout="wide")
 
-# Custom CSS: Restored top padding for title visibility + compact internal spacing
+# Custom CSS: Restored top padding, tight spacing, word wrapping, and UB Blue (#005bbb) primary buttons
 st.markdown("""
     <style>
         .block-container { padding-top: 2.5rem !important; padding-bottom: 0.5rem !important; }
@@ -25,6 +25,17 @@ st.markdown("""
             white-space: pre-wrap !important;
             word-wrap: break-word !important;
             overflow-x: hidden !important;
+        }
+        
+        /* UB Blue for Primary Generate Button */
+        button[kind="primary"] {
+            background-color: #005bbb !important;
+            border-color: #005bbb !important;
+            color: #ffffff !important;
+        }
+        button[kind="primary"]:hover {
+            background-color: #004494 !important;
+            border-color: #004494 !important;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -154,7 +165,7 @@ with col1:
     p_col1, p_col2 = st.columns([1, 1])
     with p_col1:
         num_questions = st.number_input(
-            "Questions:", 
+            "Questions (1–20):", 
             min_value=1, 
             max_value=20, 
             value=5, 
@@ -179,7 +190,7 @@ with col1:
                 st.session_state.generated_quiz = ""
                 st.rerun()
     else:
-        if st.button("🛑 Cancel & Reset Quiz", type="primary", use_container_width=True):
+        if st.button("🛑 Cancel & Reset Quiz", use_container_width=True):
             st.session_state.is_generating = False
             st.warning("Generation cancelled.")
             st.rerun()
@@ -262,9 +273,9 @@ with col2:
             Format your output clearly into two main sections:
             
             SECTION 1: QUESTIONS
-            For each question, explicitly state the corresponding session title before the question stem.
+            For each question, output ONLY the clean question header and stem. Do NOT include the session title in Section 1.
             Format:
-            Question [Number] ([Session Title])
+            Question [Number]
             [Vignette / Stem]
             A) ...
             B) ...
@@ -273,10 +284,13 @@ with col2:
             E) ...
 
             SECTION 2: ANSWER KEY & RATIONALES
-            For each question:
-            - Correct Answer
-            - Detailed Rationale explaining why the correct option is right based on slide facts, and why distractors are wrong.
-            - Exact Slide/Page Citation from the session slides.
+            For each question, explicitly state the corresponding session title here alongside the answer details.
+            Format:
+            Question [Number]
+            - Session: [Session Title]
+            - Correct Answer: [Letter]
+            - Detailed Rationale: Explaining why the correct option is right based on slide facts, and why distractors are wrong.
+            - Exact Slide Citation: [Specific slide topic/page from slides]
 
             --- REQUIRED FOOTER ---
             At the very end of your response, output a blank line followed exactly by:
