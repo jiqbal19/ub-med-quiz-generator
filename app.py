@@ -15,8 +15,8 @@ if not GEMINI_KEY or not BIN_ID or not JSONBIN_KEY:
 
 genai.configure(api_key=GEMINI_KEY)
 
-# Use gemini-2.5-pro for NotebookLM-grade reasoning and full document comprehension
-model = genai.GenerativeModel("models/gemini-2.5-pro")
+# Using gemini-3.5-flash for NotebookLM-grade reasoning and full document synthesis
+model = genai.GenerativeModel("models/gemini-3.5-flash")
 
 def load_cloud_data():
     url = f"https://api.jsonbin.io/v3/b/{BIN_ID}/latest"
@@ -118,7 +118,6 @@ with col2:
                     quota = base_quota + (1 if idx < remainder else 0)
                     sess = sessions_dict[title]
                     
-                    # Passing 100% of slide text without truncation
                     slides_text = sess.get("slides", "")
                     
                     combined_content += f"\n\n=========================================\n"
