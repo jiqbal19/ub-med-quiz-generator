@@ -1,17 +1,22 @@
 import streamlit as st
 import pypdf
 import requests
-import random
+import google.generativeai as genai
+import datetime
 
 st.set_page_config(page_title="Faculty Studio", page_icon="👨‍🏫", layout="wide")
 
 BIN_ID = st.secrets.get("JSONBIN_BIN_ID", "")
 JSONBIN_KEY = st.secrets.get("JSONBIN_API_KEY", "")
+GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
 DEV_OVERRIDE = "1901"
 
-if not BIN_ID or not JSONBIN_KEY:
-    st.error("🔑 Database Credentials missing in Streamlit Secrets!")
+if not BIN_ID or not JSONBIN_KEY or not GEMINI_KEY:
+    st.error("🔑 Database Credentials or Gemini API Key missing in Streamlit Secrets!")
     st.stop()
+
+genai.configure(api_key=GEMINI_KEY)
+ai_model = genai.GenerativeModel("models/gemini-3.5-flash")
 
 def load_cloud_data():
     url = f"https://api.jsonbin.io/v3/b/{BIN_ID}/latest"
@@ -19,7 +24,10 @@ def load_cloud_data():
     try:
         req = requests.get(url, headers=headers)
         if req.status_code == 200:
-            return req.json().get("record", {})
+            raw_data = req.json().get("record", {})
+            # Sanitize: only retain valid dictionary course records
+            clean_data = {k: v for k, v in raw_data.items() if isinstance(v, dict) and "sessions" in v}
+            return clean_data
     except Exception:
         return {}
     return {}
@@ -44,6 +52,28 @@ def extract_text_from_pdf(pdf_file):
             text += f"\n--- Slide/Page {page_num} ---\n" + extracted
     return text
 
+def analyze_style_profile(pqs_text):
+    """Pre-analyzes exemplar questions to reverse-engineer style profile once."""
+    if not pqs_text.strip():
+        return "Standard NBME clinical vignette style with 4-5 choices."
+    
+    analysis_prompt = f"""
+    Analyze the following medical practice questions and reverse-engineer the writing style.
+    Summarize key rules regarding:
+    1. Clinical vignette length and structure.
+    2. Question stem phrasing.
+    3. Option/distractor formatting.
+    4. Difficulty level and explanation style.
+
+    PRACTICE QUESTIONS:
+    {pqs_text[:8000]}
+    """
+    try:
+        res = ai_model.generate_content(analysis_prompt)
+        return res.text
+    except Exception:
+        return "Standard NBME clinical vignette style."
+
 data = load_cloud_data()
 
 if "authenticated_course" not in st.session_state:
@@ -60,7 +90,7 @@ if not st.session_state.authenticated_course:
     
     with tab1:
         if not data:
-            st.info("No courses created yet. Switch to 'Create New Course' to get started.")
+            st.info("No active courses created yet. Switch to 'Create New Course' to get started.")
         else:
             selected_course = st.selectbox("Select Course:", options=list(data.keys()))
             entered_code = st.text_input("Enter 4-Digit Passcode:", type="password")
@@ -147,7 +177,8 @@ else:
     t_add, t_manage = st.tabs(["➕ Add New Session", "🛠️ View/Edit Published Sessions"])
     
     with t_add:
-        session_title = st.text_input("Session Title (e.g., 'Lecture 1: Gram-Positive Cocci')")
+        session_title = st.text_input("Session Title (e.g., 'Gram-Positive Cocci')")
+        session_date = st.date_input("Session Date Held", value=datetime.date.today())
         slides_file = st.file_uploader("Upload Lecture Slides (PDF)", type=["pdf"], key="add_slides")
         pqs_file = st.file_uploader("Upload Practice Questions/Answers (PDF - Optional)", type=["pdf"], key="add_pqs")
         
@@ -157,20 +188,24 @@ else:
             elif not slides_file:
                 st.warning("Please upload a slide PDF.")
             else:
-                with st.spinner("Parsing PDF and saving to cloud..."):
+                with st.spinner("parsing slides, reverse-engineering question style, and syncing to database..."):
                     slides_text = extract_text_from_pdf(slides_file)
                     pqs_text = extract_text_from_pdf(pqs_file) if pqs_file else ""
                     
+                    # Pre-analyze style once upon save
+                    style_profile = analyze_style_profile(pqs_text)
+                    
+                    date_str = session_date.strftime("%Y-%m-%d")
+                    
                     course_data["sessions"][session_title] = {
+                        "date": date_str,
                         "slides": slides_text,
-                        "pqs": pqs_text
+                        "pqs": pqs_text,
+                        "style_profile": style_profile
                     }
                     
-                    if pqs_text:
-                        course_data["global_style_pqs"] += f"\n--- {session_title} Exemplars ---\n" + pqs_text
-                        
                     save_cloud_data(data)
-                    st.success(f"Published and synced '{session_title}' live!")
+                    st.success(f"Published and permanently saved '{session_title}'!")
 
     with t_manage:
         sessions = course_data.get("sessions", {})
@@ -178,9 +213,10 @@ else:
             st.info("No published sessions in this course yet.")
         else:
             for s_title in list(sessions.keys()):
-                with st.expander(f"📖 {s_title}"):
+                with st.expander(f"📖 [{sessions[s_title].get('date', 'N/A')}] {s_title}"):
                     has_pqs = bool(sessions[s_title].get("pqs"))
-                    st.write(f"**Status:** {'🟢 Custom PQs Attached' if has_pqs else '🟡 Using Global Style Fallback'}")
+                    st.write(f"**Date Held:** {sessions[s_title].get('date', 'N/A')}")
+                    st.write(f"**Status:** {'🟢 Custom PQs Pre-Analyzed' if has_pqs else '🟡 Default NBME Style'}")
                     st.write(f"**Slide Text Length:** {len(sessions[s_title]['slides'])} characters")
                     
                     if st.button(f"🗑️ Delete '{s_title}'", key=f"del_{s_title}"):
