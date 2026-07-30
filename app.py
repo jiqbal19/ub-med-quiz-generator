@@ -1,35 +1,37 @@
 import streamlit as st
 import google.generativeai as genai
-import json
-import os
+import requests
 
 st.set_page_config(page_title="UB Med Practice Generator", page_icon="🩺", layout="wide")
 
-DATA_FILE = "courses_data.json"
+# API & DB Credentials from Secrets
+GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
+BIN_ID = st.secrets.get("JSONBIN_BIN_ID", "")
+JSONBIN_KEY = st.secrets.get("JSONBIN_API_KEY", "")
 
-def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-# API Setup
-api_key = st.secrets.get("GEMINI_API_KEY", "")
-if not api_key:
-    st.error("🔑 Gemini API Key missing! Add GEMINI_API_KEY to Streamlit Secrets.")
+if not GEMINI_KEY or not BIN_ID or not JSONBIN_KEY:
+    st.error("🔑 API Keys or DB Credentials missing in Streamlit Secrets!")
     st.stop()
 
-genai.configure(api_key=api_key)
+genai.configure(api_key=GEMINI_KEY)
 model = genai.GenerativeModel("gemini-1.5-flash")
+
+# Load Data from Cloud Database
+def load_cloud_data():
+    url = f"https://api.jsonbin.io/v3/b/{BIN_ID}/latest"
+    headers = {"X-Master-Key": JSONBIN_KEY}
+    try:
+        req = requests.get(url, headers=headers)
+        if req.status_code == 200:
+            return req.json().get("record", {})
+    except Exception as e:
+        st.error(f"Error reading database: {e}")
+    return {}
 
 st.title("🎓 Student Practice Question Generator")
 st.caption("Select your course and lecture sessions to generate board-style practice questions.")
 
-# Read fresh data on every load
-data = load_data()
+data = load_cloud_data()
 
 if not data:
     st.info("No courses are currently available. Please check back after faculty publish sessions.")
@@ -37,7 +39,6 @@ if not data:
 
 # 1. Course Selection
 selected_course = st.selectbox("Select Course:", options=list(data.keys()))
-
 course_info = data.get(selected_course, {})
 sessions = course_info.get("sessions", {})
 
