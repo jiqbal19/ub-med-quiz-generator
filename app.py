@@ -252,12 +252,16 @@ with col2:
             You are a medical school faculty member writing completely original, high-yield in-house exam practice questions for students enrolled in {selected_course}.
             
             --- CRITICAL GROUNDING & ORIGINALITY RULES ---
-            1. STRICT SCOPE & ORIGINALITY: All questions, options, and distractors MUST be grounded STRICTLY in facts explicitly stated in the provided lecture slide documents. Do NOT copy, reproduce, or closely paraphrase specific questions or vignette details from any existing faculty practice sets. Practice sets and style profiles must be used ONLY to learn the faculty's testing patterns, vignette depth, and distractor logic.
-            2. INDISTINGUISHABLE FACULTY STYLE: The final output must read as if written manually by the professor. Match their exact tone, clinical complexity, stem phrasing, and distractor design so closely that the AI-generated questions are indistinguishable from real faculty exam questions.
+            1. STRICT SCOPE & ORIGINALITY: All questions, options, and distractors MUST be grounded STRICTLY in facts explicitly stated in the provided lecture slide documents. Read through all slides completely. Do NOT copy or closely paraphrase specific questions from existing practice sets.
+            2. INDISTINGUISHABLE FACULTY STYLE: Match the faculty's exact tone, clinical vignette complexity, stem phrasing, and distractor design so closely that the AI-generated questions are indistinguishable from real faculty exam questions.
             3. OBJECTIVES ALIGNMENT: Locate the "Session/Lecture Learning Objectives" (usually on early slides) for each session document. Ensure every question directly tests a stated session learning objective.
             4. SINGLE SESSION ASSIGNMENT: Each question corresponds to EXACTLY ONE lecture session document.
             5. ABSOLUTELY NO LATEX: NEVER use LaTeX syntax, math delimiters, or dollar signs (e.g., do NOT use $, $$, \\frac, \\text, \\mathrm, \\mu). Write all numerical values, units, and chemical formulas using plain text and standard characters only (e.g., write "mg/dL", "alpha-1", "H2O", "10-15%", "greater than", "less than").
             
+            --- ANSWER KEY RANDOMIZATION & CITATION RULES ---
+            6. RANDOMIZED CORRECT ANSWER DISTRIBUTION: You MUST vary the correct answer position randomly across options A, B, C, D, and E. Avoid clustering correct answers on B or C. Distribute correct keys unpredictably across the set (e.g., A, D, E, B, C) so option placement cannot be guessed by students.
+            7. SPECIFIC SLIDE NUMBER CITATIONS: In Section 2, every question rationale MUST cite the exact slide/page number where the fact was derived from the document (e.g., "Exact Slide Citation: Slide 14 - Gastric Acid Phase Control").
+
             --- TARGET QUESTION DISTRIBUTION PER SESSION ---
             {session_instructions}
 
@@ -285,13 +289,13 @@ with col2:
             E) ...
 
             SECTION 2: ANSWER KEY & RATIONALES
-            For each question, explicitly state the corresponding session title here alongside the answer details.
+            For each question, explicitly state the corresponding session title, correct letter, rationale, and specific slide number here.
             Format:
             Question [Number]
             - Session: [Session Title]
-            - Correct Answer: [Letter]
-            - Detailed Rationale: Explaining why the correct option is right based on slide facts, and why distractors are wrong.
-            - Exact Slide Citation: [Specific slide topic/page from slides]
+            - Correct Answer: [Letter A-E]
+            - Detailed Rationale: Explaining why the correct option is right based on slide facts, and why each distractor is incorrect.
+            - Exact Slide Citation: Slide [Number] ([Slide Topic/Heading])
 
             --- REQUIRED FOOTER ---
             At the very end of your response, output a blank line followed exactly by:
