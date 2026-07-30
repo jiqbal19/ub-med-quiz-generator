@@ -14,7 +14,9 @@ if not GEMINI_KEY or not BIN_ID or not JSONBIN_KEY:
     st.stop()
 
 genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel("models/gemini-3.5-flash")
+
+# Use gemini-2.5-pro for NotebookLM-grade reasoning and full document comprehension
+model = genai.GenerativeModel("models/gemini-2.5-pro")
 
 def load_cloud_data():
     url = f"https://api.jsonbin.io/v3/b/{BIN_ID}/latest"
@@ -104,7 +106,7 @@ with col2:
         if not selected_session_titles:
             st.error("Please select at least one lecture session.")
         else:
-            with st.spinner("Analyzing lecture slides and learning objectives..."):
+            with st.spinner("Analyzing full lecture slide decks and generating NBME-grade quiz..."):
                 combined_content = ""
                 combined_styles = ""
                 
@@ -116,12 +118,14 @@ with col2:
                     quota = base_quota + (1 if idx < remainder else 0)
                     sess = sessions_dict[title]
                     
+                    # Passing 100% of slide text without truncation
+                    slides_text = sess.get("slides", "")
+                    
                     combined_content += f"\n\n=========================================\n"
                     combined_content += f"SESSION: '{title}' (Target Questions: {quota})\n"
                     combined_content += f"=========================================\n"
-                    combined_content += sess["slides"]
+                    combined_content += slides_text
                     
-                    # Use custom session style if present, otherwise fall back to global course style
                     sess_style = sess.get("style_profile")
                     if sess_style:
                         combined_styles += f"\n--- Style Profile for {title} ---\n" + sess_style
@@ -169,11 +173,12 @@ with col2:
                 """
 
                 try:
-                    response = model.generate_content(prompt, stream=True)
                     output_container = st.empty()
                     full_text = ""
+                    response = model.generate_content(prompt, stream=True)
                     for chunk in response:
-                        full_text += chunk.text
-                        output_container.text_area("Copyable Quiz Output:", value=full_text, height=600)
+                        if chunk.text:
+                            full_text += chunk.text
+                            output_container.text_area("Copyable Quiz Output:", value=full_text, height=600)
                 except Exception as e:
                     st.error(f"Error generating questions: {e}")
