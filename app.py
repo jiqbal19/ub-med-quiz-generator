@@ -23,9 +23,9 @@ if not BIN_ID or not JSONBIN_KEY:
 # Initialize Google GenAI client
 client = genai.Client(api_key=GEMINI_KEY)
 
-# Official active models for Google GenAI SDK (without 'models/' prefix)
-PRIMARY_MODEL = "gemini-2.0-flash"
-FALLBACK_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro"]
+# Active production models for google-genai SDK
+PRIMARY_MODEL = "gemini-2.5-flash"
+FALLBACK_MODELS = ["gemini-2.5-pro", "gemini-1.5-flash"]
 
 def load_cloud_data():
     url = f"https://api.jsonbin.io/v3/b/{BIN_ID}/latest"
