@@ -1,5 +1,6 @@
 import streamlit as st
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import requests
 import time
 import tempfile
@@ -13,15 +14,15 @@ BIN_ID = str(st.secrets.get("JSONBIN_BIN_ID", "")).strip()
 JSONBIN_KEY = str(st.secrets.get("JSONBIN_API_KEY", "")).strip()
 
 if not GEMINI_KEY or GEMINI_KEY == "None":
-    st.error("🔑 `GEMINI_API_KEY` is missing or invalid in your Streamlit Secrets dashboard!")
+    st.error("🔑 `GEMINI_API_KEY` is missing in your Streamlit Secrets dashboard!")
     st.stop()
 
 if not BIN_ID or not JSONBIN_KEY:
     st.error("🔑 JSONBin credentials missing in Streamlit Secrets!")
     st.stop()
 
-genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel("models/gemini-2.5-flash")
+# Initialize the new Google GenAI client
+client = genai.Client(api_key=GEMINI_KEY)
 
 def load_cloud_data():
     url = f"https://api.jsonbin.io/v3/b/{BIN_ID}/latest"
@@ -149,7 +150,7 @@ with col2:
         status_box.info("⚡ Preparing full slide decks for AI context...")
         progress_bar.progress(15)
         
-        uploaded_gemini_files = []
+        uploaded_files = []
         combined_styles = ""
         session_instructions = ""
         
@@ -167,8 +168,8 @@ with col2:
                     temp_file.write(f"FULL LECTURE SLIDES FOR SESSION: '{title}'\n\n" + slides_text)
                     temp_path = temp_file.name
                 
-                g_file = genai.upload_file(path=temp_path, display_name=f"Slides_{title}")
-                uploaded_gemini_files.append(g_file)
+                g_file = client.files.upload(file=temp_path)
+                uploaded_files.append(g_file)
                 os.remove(temp_path)
                 
                 session_instructions += f"\n- Session '{title}': Generate exactly {quota} question(s)."
@@ -223,10 +224,13 @@ with col2:
             - Exact Slide/Page Citation from the session slides.
             """
 
-            contents_payload = uploaded_gemini_files + [prompt]
+            contents_payload = uploaded_files + [prompt]
 
             full_text = ""
-            response = model.generate_content(contents_payload, stream=True)
+            response = client.models.generate_content_stream(
+                model="gemini-2.5-flash",
+                contents=contents_payload
+            )
             
             progress_bar.progress(60)
             status_box.info("✍️ Live Streaming: Writing questions & rationales below...")
@@ -240,9 +244,9 @@ with col2:
                     progress_bar.progress(current_prog)
                     output_container.text_area("Copyable Quiz Output:", value=full_text, height=600)
 
-            for g_f in uploaded_gemini_files:
+            for g_f in uploaded_files:
                 try:
-                    genai.delete_file(g_f.name)
+                    client.files.delete(name=g_f.name)
                 except Exception:
                     pass
 
@@ -260,9 +264,9 @@ with col2:
             st.rerun()
             
         except Exception as e:
-            for g_f in uploaded_gemini_files:
+            for g_f in uploaded_files:
                 try:
-                    genai.delete_file(g_f.name)
+                    client.files.delete(name=g_f.name)
                 except Exception:
                     pass
                     
