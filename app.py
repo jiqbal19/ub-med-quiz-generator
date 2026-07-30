@@ -10,29 +10,21 @@ from docx import Document
 
 st.set_page_config(page_title="UB Med Practice Generator", page_icon="🩺", layout="wide")
 
-# Custom CSS for compact vertical layout, word wrapping, and top-right toolbar alignment inside output window
+# Custom CSS to minimize padding, compress gaps, and keep everything above the fold
 st.markdown("""
     <style>
-        .block-container { padding-top: 1.5rem; padding-bottom: 1rem; }
-        h1 { font-size: 1.8rem !important; margin-bottom: 0.2rem !important; }
-        h3 { font-size: 1.1rem !important; margin-top: 0.5rem !important; margin-bottom: 0.3rem !important; }
-        .stCaption { margin-bottom: 0.4rem !important; }
-        hr { margin-top: 0.5rem !important; margin-bottom: 0.5rem !important; }
+        .block-container { padding-top: 1rem !important; padding-bottom: 0.5rem !important; }
+        h1 { font-size: 1.6rem !important; margin-bottom: 0rem !important; padding-bottom: 0rem !important; }
+        h3 { font-size: 1.05rem !important; margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+        .stCaption { margin-bottom: 0.2rem !important; }
+        hr { margin-top: 0.3rem !important; margin-bottom: 0.3rem !important; }
+        div[data-testid="stVerticalBlock"] > div { gap: 0.4rem !important; }
         
         /* Force line/word wrapping in text areas and code blocks */
         code, pre, div[data-baseweb="textarea"] textarea {
             white-space: pre-wrap !important;
             word-wrap: break-word !important;
             overflow-x: hidden !important;
-        }
-        
-        /* Toolbar button styling within the output card */
-        .output-toolbar {
-            display: flex;
-            justify-content: flex-end;
-            align-items: center;
-            gap: 0.5rem;
-            margin-bottom: -0.5rem;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -88,47 +80,54 @@ if not data:
     st.info("No active courses are currently available. Please check back after faculty publish a course.")
     st.stop()
 
-selected_course = st.selectbox(
-    "Select Course:", 
-    options=list(data.keys()),
-    disabled=st.session_state.get("is_generating", False)
-)
-course_info = data.get(selected_course, {})
-sessions_dict = course_info.get("sessions", {})
-global_course_style = course_info.get("global_style_profile", "")
-
-if not sessions_dict:
-    st.warning(f"No lecture sessions available for '{selected_course}' yet.")
-    st.stop()
-
-def sort_key(item):
-    title, details = item
-    raw_date = details.get("date", "2099-12-31")
-    return (raw_date, title.lower())
-
-sorted_sessions = sorted(sessions_dict.items(), key=sort_key)
-
 if "is_generating" not in st.session_state:
     st.session_state.is_generating = False
 if "generated_quiz" not in st.session_state:
     st.session_state.generated_quiz = ""
 
 st.markdown("---")
-col1, col2 = st.columns([1, 2])
+col1, col2 = st.columns([1, 1.3], gap="large")
 
 with col1:
+    selected_course = st.selectbox(
+        "Select Course:", 
+        options=list(data.keys()),
+        disabled=st.session_state.get("is_generating", False)
+    )
+    course_info = data.get(selected_course, {})
+    sessions_dict = course_info.get("sessions", {})
+    global_course_style = course_info.get("global_style_profile", "")
+
+    if not sessions_dict:
+        st.warning(f"No lecture sessions available for '{selected_course}' yet.")
+        st.stop()
+
+    def sort_key(item):
+        title, details = item
+        raw_date = details.get("date", "2099-12-31")
+        return (raw_date, title.lower())
+
+    sorted_sessions = sorted(sessions_dict.items(), key=sort_key)
+
     st.subheader("1. Select Lecture Sessions")
     
-    select_all = st.checkbox(
+    # Callback to handle robust "Select All" toggle across Streamlit session state
+    def toggle_all_sessions():
+        select_all_state = st.session_state.get(f"select_all_{selected_course}", False)
+        for title, _ in sorted_sessions:
+            st.session_state[f"cb_{selected_course}_{title}"] = select_all_state
+
+    st.checkbox(
         "Select All Sessions", 
         key=f"select_all_{selected_course}",
+        on_change=toggle_all_sessions,
         disabled=st.session_state.is_generating
     )
     
     selected_session_titles = []
     
-    # Scrollable container for lecture sessions to keep Generate button above the fold
-    with st.container(height=220):
+    # Compact scrollable container for lecture sessions
+    with st.container(height=125):
         for title, details in sorted_sessions:
             raw_date = details.get("date", "")
             formatted_date = ""
@@ -140,16 +139,18 @@ with col1:
                     formatted_date = ""
             
             display_label = f"{formatted_date}{title}"
+            cb_key = f"cb_{selected_course}_{title}"
             
+            if cb_key not in st.session_state:
+                st.session_state[cb_key] = False
+
             if st.checkbox(
                 display_label, 
-                value=select_all,
-                key=f"cb_{selected_course}_{title}",
+                key=cb_key,
                 disabled=st.session_state.is_generating
             ):
                 selected_session_titles.append(title)
             
-    st.markdown("---")
     st.subheader("2. Quiz Parameters")
     
     p_col1, p_col2 = st.columns([1, 1])
@@ -170,8 +171,6 @@ with col1:
                 options=["By Session", "Shuffle"],
                 disabled=st.session_state.is_generating
             )
-    
-    st.markdown("---")
     
     if not st.session_state.is_generating:
         if st.button("🚀 Generate Practice Quiz", type="primary", use_container_width=True):
@@ -320,7 +319,7 @@ with col2:
                     chunk_count += 1
                     current_prog = min(60 + (chunk_count * 2), 98)
                     progress_bar.progress(current_prog)
-                    output_container.text_area("Live Stream Output:", value=full_text, height=480)
+                    output_container.text_area("Live Stream Output:", value=full_text, height=450)
 
             st.session_state.generated_quiz = full_text
 
@@ -352,7 +351,6 @@ with col2:
     elif st.session_state.generated_quiz:
         st.success("🎉 Practice Quiz Generated!")
         
-        # Download buttons placed inside the toolbar row, aligned next to the native code copy button
         tb_col1, tb_col2, tb_col3 = st.columns([6, 1.5, 1.5])
         
         with tb_col2:
