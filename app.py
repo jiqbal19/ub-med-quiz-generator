@@ -54,8 +54,13 @@ if not BIN_ID or not JSONBIN_KEY:
 
 client = genai.Client(api_key=GEMINI_KEY)
 
-PRIMARY_MODEL = "gemini-flash-latest"
-FALLBACK_MODELS = ["gemini-pro-latest"]
+# Broad model hierarchy for maximum 503 resilience
+MODEL_CHAIN = [
+    "gemini-flash-latest",
+    "gemini-2.5-flash",
+    "gemini-pro-latest",
+    "gemini-1.5-flash"
+]
 
 def load_cloud_data():
     url = f"https://api.jsonbin.io/v3/b/{BIN_ID}/latest"
@@ -305,25 +310,29 @@ with col2:
             contents_payload = uploaded_files + [prompt]
 
             response = None
-            models_to_try = [PRIMARY_MODEL] + FALLBACK_MODELS
             
-            for target_model in models_to_try:
-                try:
-                    response = client.models.generate_content_stream(
-                        model=target_model,
-                        contents=contents_payload
-                    )
+            # Robust Retry Mechanism for 503 Spikes & Unavailable Endpoints
+            for target_model in MODEL_CHAIN:
+                for attempt in range(3):  # Retry up to 3 times per model
+                    try:
+                        response = client.models.generate_content_stream(
+                            model=target_model,
+                            contents=contents_payload
+                        )
+                        break
+                    except Exception as model_err:
+                        err_str = str(model_err)
+                        if "503" in err_str or "UNAVAILABLE" in err_str or "404" in err_str:
+                            status_box.warning(f"⏳ Server demand high on `{target_model}`. Retrying in 2s (Attempt {attempt+1}/3)...")
+                            time.sleep(2)
+                            continue
+                        else:
+                            raise model_err
+                if response:
                     break
-                except Exception as model_err:
-                    if "503" in str(model_err) or "UNAVAILABLE" in str(model_err) or "404" in str(model_err):
-                        status_box.warning(f"⚠️ Primary engine busy. Trying fallback model...")
-                        time.sleep(1)
-                        continue
-                    else:
-                        raise model_err
 
             if not response:
-                raise Exception("Google API endpoints are currently experiencing high demand. Please try again in a few moments.")
+                raise Exception("Google API servers are currently experiencing peak load across all engines. Please try clicking 'Generate Practice Quiz' again in 10-15 seconds.")
 
             progress_bar.progress(60)
             status_box.info("✍️ Live Streaming: Writing questions & rationales below...")
