@@ -5,7 +5,6 @@ import time
 import tempfile
 import os
 import io
-import json
 from datetime import datetime
 from docx import Document
 
@@ -346,21 +345,43 @@ with col2:
                     progress_bar.progress(current_prog)
                     output_container.text_area("Live Stream Output:", value=full_text, height=450)
 
+            # Store finished quiz in session state
             st.session_state.generated_quiz = full_text
+            st.session_state.is_generating = False
 
+            # Delete uploaded context files
             for g_f in uploaded_files:
                 try:
                     client.files.delete(name=g_f.name)
                 except Exception:
                     pass
 
-            progress_bar.progress(100)
-            status_box.success("🎉 Quiz Generation Complete!")
-            time.sleep(0.5)
-            
-            st.session_state.is_generating = False
-            st.rerun()
-            
+            # Clear status elements and render final output directly in-place
+            status_box.empty()
+            progress_bar.empty()
+            output_container.empty()
+
+            st.success("🎉 Practice Quiz Generated!")
+            tb_col1, tb_col2, tb_col3 = st.columns([6, 1.5, 1.5])
+            with tb_col2:
+                st.download_button(
+                    label="📄 .TXT",
+                    data=full_text,
+                    file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+            with tb_col3:
+                docx_data = create_docx(full_text)
+                st.download_button(
+                    label="📝 .DOCX",
+                    data=docx_data,
+                    file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True
+                )
+            st.code(full_text, language="markdown")
+
         except Exception as e:
             for g_f in uploaded_files:
                 try:
