@@ -89,36 +89,42 @@ if not st.session_state.authenticated_course:
         if not data:
             st.info("No active courses created yet. Switch to 'Create New Course' to get started.")
         else:
-            selected_course = st.selectbox("Select Course:", options=list(data.keys()))
-            entered_code = st.text_input("Enter 4-Digit Passcode:", type="password")
-            
-            if st.button("Enter Studio", type="primary"):
-                stored_code = str(data[selected_course].get("passcode"))
-                if entered_code == stored_code or entered_code == DEV_OVERRIDE:
-                    st.session_state.authenticated_course = selected_course
-                    st.session_state.show_delete_course_confirm = False
-                    st.rerun()
-                else:
-                    st.error("Incorrect passcode. Access denied.")
+            # Wrap in st.form to enable Enter key submission
+            with st.form("login_form"):
+                selected_course = st.selectbox("Select Course:", options=list(data.keys()))
+                entered_code = st.text_input("Enter 4-Digit Passcode:", type="password")
+                submit_login = st.form_submit_button("Enter Studio", type="primary")
+                
+                if submit_login:
+                    stored_code = str(data[selected_course].get("passcode"))
+                    if entered_code == stored_code or entered_code == DEV_OVERRIDE:
+                        st.session_state.authenticated_course = selected_course
+                        st.session_state.show_delete_course_confirm = False
+                        st.rerun()
+                    else:
+                        st.error("Incorrect passcode. Access denied.")
 
     with tab2:
-        new_course_name = st.text_input("Course Name (e.g., 'Microbiology Fall 2026')")
-        if st.button("Generate Course Workspace", type="primary"):
-            if not new_course_name.strip():
-                st.warning("Please enter a course name.")
-            elif new_course_name in data:
-                st.warning("A course with this name already exists.")
-            else:
-                generated_passcode = str(random.randint(1000, 9999))
-                data[new_course_name] = {
-                    "passcode": generated_passcode,
-                    "global_style_pqs": "",
-                    "sessions": {}
-                }
-                save_cloud_data(data)
-                st.session_state.newly_created_course = new_course_name
-                st.session_state.newly_created_passcode = generated_passcode
-                st.rerun()
+        with st.form("create_course_form"):
+            new_course_name = st.text_input("Course Name (e.g., 'Microbiology Fall 2026')")
+            submit_create = st.form_submit_button("Generate Course Workspace", type="primary")
+            
+            if submit_create:
+                if not new_course_name.strip():
+                    st.warning("Please enter a course name.")
+                elif new_course_name in data:
+                    st.warning("A course with this name already exists.")
+                else:
+                    generated_passcode = str(random.randint(1000, 9999))
+                    data[new_course_name] = {
+                        "passcode": generated_passcode,
+                        "global_style_pqs": "",
+                        "sessions": {}
+                    }
+                    save_cloud_data(data)
+                    st.session_state.newly_created_course = new_course_name
+                    st.session_state.newly_created_passcode = generated_passcode
+                    st.rerun()
 
         if "newly_created_course" in st.session_state and st.session_state.newly_created_course:
             nc_name = st.session_state.newly_created_course
@@ -239,7 +245,6 @@ else:
                     edit_title = st.text_input("Session Title", value=s_title, key=f"edit_title_{s_title}")
                     edit_date = st.date_input("Session Date Held", value=default_date, format="MM/DD/YYYY", key=f"edit_date_{s_title}")
                     
-                    # Slide Filename Display
                     curr_slides_fn = sess_info.get("slides_filename")
                     if not curr_slides_fn or curr_slides_fn == "Uploaded Slide PDF":
                         curr_slides_fn = "[Uploaded PDF - Name not recorded]"
@@ -248,7 +253,6 @@ else:
                     st.caption(f"📎 **Currently attached file:** `{curr_slides_fn}`")
                     new_slides_file = st.file_uploader("Upload new slide PDF to replace:", type=["pdf"], key=f"edit_slides_{s_title}")
                     
-                    # PQ Filename Display
                     curr_pqs_fn = sess_info.get("pqs_filename", "")
                     st.markdown("**Replace Practice Questions (PDF - Optional)**")
                     if curr_pqs_fn:
