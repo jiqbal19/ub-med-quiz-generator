@@ -6,6 +6,8 @@ import requests
 import google.generativeai as genai
 import datetime
 import random
+import zlib
+import base64
 
 st.set_page_config(page_title="Faculty Studio", page_icon="👨‍🏫", layout="wide")
 
@@ -30,6 +32,70 @@ if not BIN_ID or not JSONBIN_KEY or not GEMINI_KEY:
 genai.configure(api_key=GEMINI_KEY)
 style_analyzer_model = genai.GenerativeModel("models/gemini-2.5-flash-lite")
 
+# --- COMPRESSION HELPERS TO STAY UNDER JSONBIN 100KB LIMIT ---
+def compress_text(text: str) -> str:
+    """Compresses string text using zlib and base64 encoding."""
+    if not text:
+        return ""
+    try:
+        compressed_bytes = zlib.compress(text.encode('utf-8'), level=9)
+        return "COMPRESSED:" + base64.b64encode(compressed_bytes).decode('utf-8')
+    except Exception:
+        return text
+
+def decompress_text(text: str) -> str:
+    """Decompresses zlib base64 string back to raw text."""
+    if not text or not isinstance(text, str):
+        return ""
+    if text.startswith("COMPRESSED:"):
+        try:
+            raw_b64 = text.replace("COMPRESSED:", "")
+            compressed_bytes = base64.b64decode(raw_b64.encode('utf-8'))
+            return zlib.decompress(compressed_bytes).decode('utf-8')
+        except Exception:
+            return text
+    return text
+
+def decompress_course_data(raw_data: dict) -> dict:
+    """Recursively decompresses slide text and PQS text for local use."""
+    if not isinstance(raw_data, dict):
+        return {}
+    
+    for course_id, course_info in raw_data.items():
+        if isinstance(course_info, dict):
+            if "global_pqs_text" in course_info:
+                course_info["global_pqs_text"] = decompress_text(course_info["global_pqs_text"])
+            
+            sessions = course_info.get("sessions", {})
+            if isinstance(sessions, dict):
+                for s_id, s_info in sessions.items():
+                    if isinstance(s_info, dict):
+                        if "slides" in s_info:
+                            s_info["slides"] = decompress_text(s_info["slides"])
+                        if "pqs" in s_info:
+                            s_info["pqs"] = decompress_text(s_info["pqs"])
+    return raw_data
+
+def compress_course_data_for_saving(data: dict) -> dict:
+    """Creates a deep copy of course data with compressed slide texts before pushing to JSONBin."""
+    import copy
+    data_to_save = copy.deepcopy(data)
+    
+    for course_id, course_info in data_to_save.items():
+        if isinstance(course_info, dict):
+            if "global_pqs_text" in course_info:
+                course_info["global_pqs_text"] = compress_text(course_info["global_pqs_text"])
+            
+            sessions = course_info.get("sessions", {})
+            if isinstance(sessions, dict):
+                for s_id, s_info in sessions.items():
+                    if isinstance(s_info, dict):
+                        if "slides" in s_info:
+                            s_info["slides"] = compress_text(s_info["slides"])
+                        if "pqs" in s_info:
+                            s_info["pqs"] = compress_text(s_info["pqs"])
+    return data_to_save
+
 def load_cloud_data():
     url = f"https://api.jsonbin.io/v3/b/{BIN_ID}/latest"
     headers = {"X-Master-Key": JSONBIN_KEY}
@@ -37,8 +103,8 @@ def load_cloud_data():
         req = requests.get(url, headers=headers)
         if req.status_code == 200:
             raw_data = req.json().get("record", {})
-            # FIX 1: Safely load any valid course dict (even newly created ones before sessions exist)
-            return {k: v for k, v in raw_data.items() if isinstance(v, dict) and ("sessions" in v or "passcode" in v)}
+            valid_courses = {k: v for k, v in raw_data.items() if isinstance(v, dict) and ("sessions" in v or "passcode" in v)}
+            return decompress_course_data(valid_courses)
     except Exception:
         return {}
     return {}
@@ -49,8 +115,11 @@ def save_cloud_data(data):
         "Content-Type": "application/json",
         "X-Master-Key": JSONBIN_KEY
     }
+    
+    payload = compress_course_data_for_saving(data)
+    
     try:
-        req = requests.put(url, headers=headers, json=data)
+        req = requests.put(url, headers=headers, json=payload)
         if req.status_code == 200:
             return True
         else:
@@ -291,7 +360,6 @@ else:
     st.markdown("---")
     t_add, t_manage = st.tabs(["➕ Add New Session", "🛠️ View/Edit Published Sessions"])
     
-    # Dynamic radio option strings with clear UI indicators
     opt_master = f"Use Course-Wide Master Exam ({master_fn})" if course_has_master else "Use Course-Wide Master Exam (⚠️ No master exam uploaded yet)"
     opt_custom = "Upload Custom Practice Question File for This Session Specifically"
     
