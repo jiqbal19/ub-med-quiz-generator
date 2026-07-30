@@ -115,8 +115,8 @@ if "is_generating" not in st.session_state:
 if "generated_quiz" not in st.session_state:
     st.session_state.generated_quiz = ""
 
-quiz_exists = bool(st.session_state.generated_quiz)
-is_active = st.session_state.is_generating or quiz_exists
+has_quiz = bool(st.session_state.generated_quiz)
+is_busy = st.session_state.is_generating or has_quiz
 
 st.markdown("---")
 col1, col2 = st.columns([1, 1.3], gap="large")
@@ -125,7 +125,7 @@ with col1:
     selected_course = st.selectbox(
         "Select Course:", 
         options=list(data.keys()),
-        disabled=is_active
+        disabled=is_busy
     )
     course_info = data.get(selected_course, {})
     sessions_dict = course_info.get("sessions", {})
@@ -153,7 +153,7 @@ with col1:
         "Select All Sessions", 
         key=f"select_all_{selected_course}",
         on_change=toggle_all_sessions,
-        disabled=is_active
+        disabled=is_busy
     )
     
     selected_session_titles = []
@@ -178,7 +178,7 @@ with col1:
             if st.checkbox(
                 display_label, 
                 key=cb_key,
-                disabled=is_active
+                disabled=is_busy
             ):
                 selected_session_titles.append(title)
             
@@ -192,7 +192,7 @@ with col1:
             max_value=20, 
             value=5, 
             step=1,
-            disabled=is_active
+            disabled=is_busy
         )
     with p_col2:
         arrange_mode = "By Session"
@@ -200,10 +200,10 @@ with col1:
             arrange_mode = st.radio(
                 "Arrangement:",
                 options=["By Session", "Shuffle"],
-                disabled=is_active
+                disabled=is_busy
             )
     
-    if not is_active:
+    if not is_busy:
         if st.button("🚀 Generate Practice Quiz", type="primary", use_container_width=True):
             if not selected_session_titles:
                 st.error("Please select at least one lecture session.")
@@ -218,7 +218,33 @@ with col1:
 with col2:
     st.subheader("3. Generated Quiz Output")
     
-    if st.session_state.is_generating:
+    if st.session_state.generated_quiz:
+        st.success("🎉 Practice Quiz Generated!")
+        
+        tb_col1, tb_col2, tb_col3 = st.columns([6, 1.5, 1.5])
+        
+        with tb_col2:
+            st.download_button(
+                label="📄 .TXT",
+                data=st.session_state.generated_quiz,
+                file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.txt",
+                mime="text/plain",
+                use_container_width=True
+            )
+            
+        with tb_col3:
+            docx_data = create_docx(st.session_state.generated_quiz)
+            st.download_button(
+                label="📝 .DOCX",
+                data=docx_data,
+                file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True
+            )
+            
+        st.code(st.session_state.generated_quiz, language="markdown")
+
+    elif st.session_state.is_generating:
         st.components.v1.html("""
             <script>
             window.addEventListener('beforeunload', function (e) {
@@ -367,7 +393,6 @@ with col2:
                 except Exception:
                     pass
 
-            # Store generated text, lower the generation flag, and force a clean rerun to display static result
             st.session_state.generated_quiz = full_text
             st.session_state.is_generating = False
             st.rerun()
@@ -384,30 +409,5 @@ with col2:
             progress_bar.empty()
             st.error(f"Error generating questions: {e}")
 
-    elif st.session_state.generated_quiz:
-        st.success("🎉 Practice Quiz Active")
-        
-        tb_col1, tb_col2, tb_col3 = st.columns([6, 1.5, 1.5])
-        
-        with tb_col2:
-            st.download_button(
-                label="📄 .TXT",
-                data=st.session_state.generated_quiz,
-                file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.txt",
-                mime="text/plain",
-                use_container_width=True
-            )
-            
-        with tb_col3:
-            docx_data = create_docx(st.session_state.generated_quiz)
-            st.download_button(
-                label="📝 .DOCX",
-                data=docx_data,
-                file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                use_container_width=True
-            )
-            
-        st.code(st.session_state.generated_quiz, language="markdown")
     else:
         st.info("Select options on the left and click 'Generate Practice Quiz' to create questions.")
