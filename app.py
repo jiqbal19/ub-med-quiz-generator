@@ -249,18 +249,19 @@ with col2:
             status_box.info("🧠 Analyzing 100% of slide contents & matching faculty style...")
 
             prompt = f"""
-            You are a medical school faculty member writing in-house exam practice questions for students enrolled in {selected_course}.
+            You are a medical school faculty member writing completely original, high-yield in-house exam practice questions for students enrolled in {selected_course}.
             
-            --- CRITICAL GROUNDING & FORMATTING RULES ---
-            1. STRICT SCOPE: All questions, options, and distractors MUST be grounded STRICTLY in facts explicitly stated in the provided lecture slide documents. Read through all slides completely.
-            2. OBJECTIVES ALIGNMENT: Locate the "Session/Lecture Learning Objectives" (usually on early slides) for each session document. Ensure every question directly tests a stated session learning objective.
-            3. SINGLE SESSION ASSIGNMENT: Each question corresponds to EXACTLY ONE lecture session document.
-            4. ABSOLUTELY NO LATEX: NEVER use LaTeX syntax, math delimiters, or dollar signs (e.g., do NOT use $, $$, \\frac, \\text, \\mathrm, \\mu). Write all numerical values, units, and chemical formulas using plain text and standard characters only (e.g., write "mg/dL", "alpha-1", "H2O", "10-15%", "greater than", "less than").
+            --- CRITICAL GROUNDING & ORIGINALITY RULES ---
+            1. STRICT SCOPE & ORIGINALITY: All questions, options, and distractors MUST be grounded STRICTLY in facts explicitly stated in the provided lecture slide documents. Do NOT copy, reproduce, or closely paraphrase specific questions or vignette details from any existing faculty practice sets. Practice sets and style profiles must be used ONLY to learn the faculty's testing patterns, vignette depth, and distractor logic.
+            2. INDISTINGUISHABLE FACULTY STYLE: The final output must read as if written manually by the professor. Match their exact tone, clinical complexity, stem phrasing, and distractor design so closely that the AI-generated questions are indistinguishable from real faculty exam questions.
+            3. OBJECTIVES ALIGNMENT: Locate the "Session/Lecture Learning Objectives" (usually on early slides) for each session document. Ensure every question directly tests a stated session learning objective.
+            4. SINGLE SESSION ASSIGNMENT: Each question corresponds to EXACTLY ONE lecture session document.
+            5. ABSOLUTELY NO LATEX: NEVER use LaTeX syntax, math delimiters, or dollar signs (e.g., do NOT use $, $$, \\frac, \\text, \\mathrm, \\mu). Write all numerical values, units, and chemical formulas using plain text and standard characters only (e.g., write "mg/dL", "alpha-1", "H2O", "10-15%", "greater than", "less than").
             
             --- TARGET QUESTION DISTRIBUTION PER SESSION ---
             {session_instructions}
 
-            --- IN-HOUSE FACULTY QUESTION WRITING STYLE ---
+            --- IN-HOUSE FACULTY QUESTION WRITING STYLE GUIDELINES ---
             Emulate the exact tone, vignette structure, stem phrasing, and distractor style outlined below:
             {combined_styles if combined_styles else "Write clear, high-yield in-house medical school exam questions based strictly on the slides."}
 
