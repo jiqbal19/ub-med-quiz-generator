@@ -23,7 +23,7 @@ if not BIN_ID or not JSONBIN_KEY:
 # Initialize Google GenAI client
 client = genai.Client(api_key=GEMINI_KEY)
 
-# Use official latest alias pointers to bypass version restrictions on new API keys
+# Use official latest alias pointers
 PRIMARY_MODEL = "gemini-flash-latest"
 FALLBACK_MODELS = ["gemini-pro-latest"]
 
@@ -68,8 +68,11 @@ def sort_key(item):
 
 sorted_sessions = sorted(sessions_dict.items(), key=sort_key)
 
+# Session State Initialization
 if "is_generating" not in st.session_state:
     st.session_state.is_generating = False
+if "generated_quiz" not in st.session_state:
+    st.session_state.generated_quiz = ""
 
 st.markdown("---")
 col1, col2 = st.columns([1, 2])
@@ -127,6 +130,7 @@ with col1:
                 st.error("Please select at least one lecture session.")
             else:
                 st.session_state.is_generating = True
+                st.session_state.generated_quiz = ""  # Clear prior quiz
                 st.rerun()
     else:
         if st.button("🛑 Cancel & Reset Quiz", type="primary"):
@@ -138,7 +142,7 @@ with col2:
     st.subheader("3. Generated Quiz Output")
     
     if st.session_state.is_generating:
-        # Prompt only on tab close or page refresh (does NOT trigger on tab switching)
+        # Prompt only on tab close or page refresh
         st.components.v1.html("""
             <script>
             window.addEventListener('beforeunload', function (e) {
@@ -243,7 +247,7 @@ with col2:
                     break
                 except Exception as model_err:
                     if "503" in str(model_err) or "UNAVAILABLE" in str(model_err) or "404" in str(model_err):
-                        status_box.warning(f"⚠️ Primary alias busy. Falling back to alternative model...")
+                        status_box.warning(f"⚠️ Primary engine busy. Trying fallback model...")
                         time.sleep(1)
                         continue
                     else:
@@ -265,6 +269,9 @@ with col2:
                     progress_bar.progress(current_prog)
                     output_container.text_area("Copyable Quiz Output:", value=full_text, height=600)
 
+            # Store finished output in persistent session state before clean up & rerun
+            st.session_state.generated_quiz = full_text
+
             for g_f in uploaded_files:
                 try:
                     client.files.delete(name=g_f.name)
@@ -274,7 +281,6 @@ with col2:
             progress_bar.progress(100)
             status_box.success("🎉 Quiz Generation Complete!")
             time.sleep(1)
-            progress_bar.empty()
             
             st.session_state.is_generating = False
             st.rerun()
@@ -290,3 +296,9 @@ with col2:
             status_box.empty()
             progress_bar.empty()
             st.error(f"Error generating questions: {e}")
+
+    elif st.session_state.generated_quiz:
+        st.success("🎉 Practice Quiz Generated!")
+        st.text_area("Copyable Quiz Output:", value=st.session_state.generated_quiz, height=600)
+    else:
+        st.info("Select options on the left and click 'Generate Practice Quiz' to create questions.")
