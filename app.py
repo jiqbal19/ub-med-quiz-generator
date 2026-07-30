@@ -14,6 +14,9 @@ if not GEMINI_KEY or not BIN_ID or not JSONBIN_KEY:
     st.stop()
 
 genai.configure(api_key=GEMINI_KEY)
+# Optional: Print available models to your Streamlit screen to verify exact names
+available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+st.write("Available models for your API Key:", available_models)
 model = genai.GenerativeModel("gemini-1.5-flash-001")
 
 # Load Data from Cloud Database
