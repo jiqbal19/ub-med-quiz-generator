@@ -23,9 +23,7 @@ def load_cloud_data():
         req = requests.get(url, headers=headers)
         if req.status_code == 200:
             raw_data = req.json().get("record", {})
-            # Sanitize: remove any orphaned keys like "test": "init"
-            clean_courses = {k: v for k, v in raw_data.items() if isinstance(v, dict) and "sessions" in v}
-            return clean_courses
+            return {k: v for k, v in raw_data.items() if isinstance(v, dict) and "sessions" in v}
     except Exception as e:
         st.error(f"Error reading database: {e}")
     return {}
@@ -39,16 +37,15 @@ if not data:
     st.info("No active courses are currently available. Please check back after faculty publish a course.")
     st.stop()
 
-# 1. Course Selection
 selected_course = st.selectbox("Select Course:", options=list(data.keys()))
 course_info = data.get(selected_course, {})
 sessions_dict = course_info.get("sessions", {})
+global_course_style = course_info.get("global_style_profile", "")
 
 if not sessions_dict:
     st.warning(f"No lecture sessions available for '{selected_course}' yet.")
     st.stop()
 
-# Sort sessions chronologically by date (YYYY-MM-DD), then alphabetically by title
 def sort_key(item):
     title, details = item
     raw_date = details.get("date", "2099-12-31")
@@ -65,14 +62,13 @@ with col1:
     
     selected_session_titles = []
     
-    # Checkbox layout for all sessions
     for title, details in sorted_sessions:
         raw_date = details.get("date", "")
         formatted_date = ""
         if raw_date:
             try:
                 dt = datetime.strptime(raw_date, "%Y-%m-%d")
-                formatted_date = dt.strftime("%m/%d") + " "
+                formatted_date = dt.strftime("%m/%d/%Y") + " - "
             except ValueError:
                 formatted_date = ""
         
@@ -83,7 +79,6 @@ with col1:
     st.markdown("---")
     st.subheader("2. Quiz Parameters")
     
-    # Question count spin box (range 1 to 20)
     num_questions = st.number_input(
         "Number of questions:", 
         min_value=1, 
@@ -92,7 +87,6 @@ with col1:
         step=1
     )
     
-    # Dynamic arrangement option if 2+ sessions checked
     arrange_mode = "By Session"
     if len(selected_session_titles) >= 2:
         arrange_mode = st.radio(
@@ -110,16 +104,14 @@ with col2:
         if not selected_session_titles:
             st.error("Please select at least one lecture session.")
         else:
-            with st.spinner("Analyzing lecture slides and objectives..."):
+            with st.spinner("Analyzing lecture slides and learning objectives..."):
                 combined_content = ""
                 combined_styles = ""
                 
-                # Calculate question distribution quota per session
                 k = len(selected_session_titles)
                 base_quota = num_questions // k
                 remainder = num_questions % k
                 
-                distribution_info = ""
                 for idx, title in enumerate(selected_session_titles):
                     quota = base_quota + (1 if idx < remainder else 0)
                     sess = sessions_dict[title]
@@ -129,10 +121,12 @@ with col2:
                     combined_content += f"=========================================\n"
                     combined_content += sess["slides"]
                     
-                    if sess.get("style_profile"):
-                        combined_styles += f"\n--- Style Profile for {title} ---\n" + sess["style_profile"]
-                    elif sess.get("pqs"):
-                        combined_styles += f"\n--- Practice Questions for {title} ---\n" + sess["pqs"]
+                    # Use custom session style if present, otherwise fall back to global course style
+                    sess_style = sess.get("style_profile")
+                    if sess_style:
+                        combined_styles += f"\n--- Style Profile for {title} ---\n" + sess_style
+                    elif global_course_style:
+                        combined_styles += f"\n--- Course-Wide Style Profile for {title} ---\n" + global_course_style
 
                 prompt = f"""
                 You are an expert medical school professor writing board-style practice questions for {selected_course}.
@@ -175,7 +169,6 @@ with col2:
                 """
 
                 try:
-                    # Stream output for immediate real-time rendering
                     response = model.generate_content(prompt, stream=True)
                     output_container = st.empty()
                     full_text = ""
