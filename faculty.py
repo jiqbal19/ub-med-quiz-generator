@@ -33,9 +33,11 @@ def extract_text_from_pdf(pdf_file):
 
 data = load_data()
 
-# Session states for authentication
+# Session states for authentication and delete confirmation
 if "authenticated_course" not in st.session_state:
     st.session_state.authenticated_course = None
+if "show_delete_course_confirm" not in st.session_state:
+    st.session_state.show_delete_course_confirm = False
 
 st.title("👨‍🏫 Faculty Studio Portal")
 
@@ -56,6 +58,7 @@ if not st.session_state.authenticated_course:
                 stored_code = str(data[selected_course].get("passcode"))
                 if entered_code == stored_code or entered_code == DEV_OVERRIDE:
                     st.session_state.authenticated_course = selected_course
+                    st.session_state.show_delete_course_confirm = False
                     st.rerun()
                 else:
                     st.error("Incorrect passcode. Access denied.")
@@ -81,18 +84,44 @@ if not st.session_state.authenticated_course:
 # --- AUTHENTICATED FACULTY DASHBOARD ---
 else:
     active_course = st.session_state.authenticated_course
-    course_data = data[active_course]
-    
-    # Header bar with logout and passcode display
-    col_a, col_b = st.columns([3, 1])
+    course_data = data.get(active_course)
+
+    # Fallback if course was deleted external to session
+    if not course_data:
+        st.session_state.authenticated_course = None
+        st.rerun()
+
+    # Top Navigation & Header Bar
+    col_a, col_b, col_c = st.columns([2, 1, 1])
     with col_a:
         st.subheader(f"Active Workspace: **{active_course}**")
         st.caption(f"🔐 Course Passcode: **{course_data.get('passcode')}**")
     with col_b:
-        if st.button("🔒 Exit Course Workspace"):
+        if st.button("🔒 Exit Workspace"):
             st.session_state.authenticated_course = None
+            st.session_state.show_delete_course_confirm = False
             st.rerun()
-            
+    with col_c:
+        if st.button("🗑️ Delete Course Workspace"):
+            st.session_state.show_delete_course_confirm = True
+
+    # --- COURSE DELETION CONFIRMATION DIALOG ---
+    if st.session_state.show_delete_course_confirm:
+        st.warning(f"⚠️ **Are you sure you want to permanently delete '{active_course}'?** This action will erase all published sessions, slides, and practice question data. It cannot be undone.")
+        col_yes, col_no = st.columns([1, 4])
+        with col_yes:
+            if st.button("🚨 Yes, Delete Permanently", type="primary"):
+                del data[active_course]
+                save_data(data)
+                st.session_state.authenticated_course = None
+                st.session_state.show_delete_course_confirm = False
+                st.success(f"'{active_course}' has been completely removed.")
+                st.rerun()
+        with col_no:
+            if st.button("Cancel"):
+                st.session_state.show_delete_course_confirm = False
+                st.rerun()
+
     st.markdown("---")
     
     # Workspace Tabs
