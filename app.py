@@ -5,8 +5,24 @@ import time
 import tempfile
 import os
 import io
+import traceback
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from datetime import datetime
 from docx import Document
+
+# Any blocking call to the Gemini API (upload or generate) gets run through this
+# so a stalled/hung network call raises a real, catchable error instead of
+# freezing the app forever with no feedback to the user.
+def run_with_timeout(fn, timeout_seconds, *args, **kwargs):
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        future = ex.submit(fn, *args, **kwargs)
+        try:
+            return future.result(timeout=timeout_seconds)
+        except FutureTimeoutError:
+            raise TimeoutError(
+                f"The request to Google's API took longer than {timeout_seconds}s and was "
+                "aborted. This is usually a temporary network or API issue — please try again."
+            )
 
 st.set_page_config(page_title="UB Med Practice Generator", page_icon="🩺", layout="wide")
 
@@ -249,14 +265,18 @@ with col2:
                 quota = base_quota + (1 if idx < remainder else 0)
                 sess = sessions_dict[title]
                 slides_text = sess.get("slides", "")
-                
+
+                status_box.info(f"⚡ Uploading slides for session '{title}' ({idx + 1}/{k})...")
+
                 with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".txt") as temp_file:
                     temp_file.write(f"FULL LECTURE SLIDES FOR SESSION: '{title}'\n\n" + slides_text)
                     temp_path = temp_file.name
-                
-                g_file = client.files.upload(file=temp_path)
+
+                try:
+                    g_file = run_with_timeout(client.files.upload, 45, file=temp_path)
+                finally:
+                    os.remove(temp_path)
                 uploaded_files.append(g_file)
-                os.remove(temp_path)
                 
                 session_instructions += f"\n- Session '{title}': Generate exactly {quota} question(s)."
                 
@@ -330,7 +350,9 @@ with col2:
             for target_model in MODEL_CHAIN:
                 for attempt in range(3):
                     try:
-                        response = client.models.generate_content_stream(
+                        response = run_with_timeout(
+                            client.models.generate_content_stream,
+                            45,
                             model=target_model,
                             contents=contents_payload
                         )
@@ -354,13 +376,29 @@ with col2:
             
             full_text = ""
             chunk_count = 0
-            for chunk in response:
+            STALL_TIMEOUT = 60  # seconds with no new chunk before we give up
+
+            def _consume_next(iterator):
+                return next(iterator)
+
+            response_iter = iter(response)
+            while True:
+                try:
+                    chunk = run_with_timeout(_consume_next, STALL_TIMEOUT, response_iter)
+                except StopIteration:
+                    break
                 if chunk.text:
                     full_text += chunk.text
                     chunk_count += 1
                     current_prog = min(60 + (chunk_count * 2), 98)
                     progress_bar.progress(current_prog)
                     output_container.text_area("Live Stream Output:", value=full_text, height=450)
+
+            if not full_text.strip():
+                raise Exception(
+                    "The AI returned an empty response. This can happen if the model "
+                    "stalled or was cut off — please try generating again."
+                )
 
             for g_f in uploaded_files:
                 try:
@@ -373,12 +411,19 @@ with col2:
             st.rerun()
 
         except Exception as e:
+            # Always log the full traceback server-side. When something goes wrong
+            # here the browser often shows nothing useful (or nothing at all if the
+            # connection stalled), so this is frequently the ONLY place the real
+            # cause is visible — check "Manage app" > Logs on Streamlit Cloud.
+            print(f"[{datetime.now().isoformat()}] Quiz generation failed: {e}")
+            traceback.print_exc()
+
             for g_f in uploaded_files:
                 try:
                     client.files.delete(name=g_f.name)
                 except Exception:
                     pass
-                    
+
             st.session_state.is_generating = False
             status_box.empty()
             progress_bar.empty()
