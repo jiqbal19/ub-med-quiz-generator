@@ -25,9 +25,7 @@ def load_cloud_data():
         req = requests.get(url, headers=headers)
         if req.status_code == 200:
             raw_data = req.json().get("record", {})
-            # Sanitize: only retain valid dictionary course records
-            clean_data = {k: v for k, v in raw_data.items() if isinstance(v, dict) and "sessions" in v}
-            return clean_data
+            return {k: v for k, v in raw_data.items() if isinstance(v, dict) and "sessions" in v}
     except Exception:
         return {}
     return {}
@@ -53,7 +51,6 @@ def extract_text_from_pdf(pdf_file):
     return text
 
 def analyze_style_profile(pqs_text):
-    """Pre-analyzes exemplar questions to reverse-engineer style profile once."""
     if not pqs_text.strip():
         return "Standard NBME clinical vignette style with 4-5 choices."
     
@@ -178,7 +175,7 @@ else:
     
     with t_add:
         session_title = st.text_input("Session Title (e.g., 'Gram-Positive Cocci')")
-        session_date = st.date_input("Session Date Held", value=datetime.date.today())
+        session_date = st.date_input("Session Date Held", value=datetime.date.today(), format="MM/DD/YYYY")
         slides_file = st.file_uploader("Upload Lecture Slides (PDF)", type=["pdf"], key="add_slides")
         pqs_file = st.file_uploader("Upload Practice Questions/Answers (PDF - Optional)", type=["pdf"], key="add_pqs")
         
@@ -198,7 +195,9 @@ else:
                     course_data["sessions"][session_title] = {
                         "date": date_str,
                         "slides": slides_text,
+                        "slides_filename": slides_file.name,
                         "pqs": pqs_text,
+                        "pqs_filename": pqs_file.name if pqs_file else "",
                         "style_profile": style_profile
                     }
                     
@@ -213,30 +212,46 @@ else:
         else:
             for s_title in list(sessions.keys()):
                 sess_info = sessions[s_title]
-                cur_date_str = sess_info.get("date", "N/A")
+                raw_date = sess_info.get("date", "N/A")
                 
-                with st.expander(f"📖 [{cur_date_str}] {s_title}"):
+                # Format MM/DD/YYYY for expander header
+                display_date = "N/A"
+                if raw_date != "N/A":
+                    try:
+                        display_date = datetime.datetime.strptime(raw_date, "%Y-%m-%d").strftime("%m/%d/%Y")
+                    except ValueError:
+                        display_date = raw_date
+                
+                with st.expander(f"📖 [{display_date}] {s_title}"):
                     has_pqs = bool(sess_info.get("pqs"))
-                    st.write(f"**Current Status:** {'🟢 Custom PQs Pre-Analyzed' if has_pqs else '🟡 Default NBME Style'}")
-                    st.write(f"**Slide Text Length:** {len(sess_info.get('slides', ''))} characters")
+                    st.write(f"**Date Held:** {display_date}")
+                    st.write(f"**Status:** {'🟢 Custom PQs Pre-Analyzed' if has_pqs else '🟡 Default NBME Style'}")
                     
                     st.markdown("---")
                     st.markdown("#### ✏️ Edit Session Details")
                     
-                    # Parse existing date for date picker
                     default_date = datetime.date.today()
-                    if cur_date_str != "N/A":
+                    if raw_date != "N/A":
                         try:
-                            default_date = datetime.datetime.strptime(cur_date_str, "%Y-%m-%d").date()
+                            default_date = datetime.datetime.strptime(raw_date, "%Y-%m-%d").date()
                         except ValueError:
                             pass
                             
                     edit_title = st.text_input("Session Title", value=s_title, key=f"edit_title_{s_title}")
-                    edit_date = st.date_input("Session Date Held", value=default_date, key=f"edit_date_{s_title}")
+                    edit_date = st.date_input("Session Date Held", value=default_date, format="MM/DD/YYYY", key=f"edit_date_{s_title}")
                     
-                    st.caption("Upload new files ONLY if you wish to replace existing ones:")
-                    new_slides_file = st.file_uploader("Replace Lecture Slides (PDF - Optional)", type=["pdf"], key=f"edit_slides_{s_title}")
-                    new_pqs_file = st.file_uploader("Replace Practice Questions (PDF - Optional)", type=["pdf"], key=f"edit_pqs_{s_title}")
+                    st.markdown("**Replace Lecture Slides (PDF - Optional)**")
+                    curr_slides_fn = sess_info.get("slides_filename", "Uploaded Slide PDF")
+                    st.caption(f"📎 **Currently attached file:** `{curr_slides_fn}`")
+                    new_slides_file = st.file_uploader("Upload new slide PDF to replace:", type=["pdf"], key=f"edit_slides_{s_title}")
+                    
+                    st.markdown("**Replace Practice Questions (PDF - Optional)**")
+                    curr_pqs_fn = sess_info.get("pqs_filename", "")
+                    if curr_pqs_fn:
+                        st.caption(f"📎 **Currently attached file:** `{curr_pqs_fn}`")
+                    else:
+                        st.caption("⚠️ *No custom practice question file attached.*")
+                    new_pqs_file = st.file_uploader("Upload new practice question PDF to replace:", type=["pdf"], key=f"edit_pqs_{s_title}")
                     
                     col_save, col_del = st.columns([1, 1])
                     
@@ -245,28 +260,31 @@ else:
                             with st.spinner("Updating session and re-analyzing style..."):
                                 updated_date_str = edit_date.strftime("%Y-%m-%d")
                                 
-                                # Process replacement slides if uploaded
                                 if new_slides_file:
                                     updated_slides = extract_text_from_pdf(new_slides_file)
+                                    updated_slides_fn = new_slides_file.name
                                 else:
                                     updated_slides = sess_info.get("slides", "")
+                                    updated_slides_fn = sess_info.get("slides_filename", "Uploaded Slide PDF")
                                     
-                                # Process replacement PQs if uploaded
                                 if new_pqs_file:
                                     updated_pqs = extract_text_from_pdf(new_pqs_file)
+                                    updated_pqs_fn = new_pqs_file.name
                                     updated_style = analyze_style_profile(updated_pqs)
                                 else:
                                     updated_pqs = sess_info.get("pqs", "")
+                                    updated_pqs_fn = sess_info.get("pqs_filename", "")
                                     updated_style = sess_info.get("style_profile", "")
                                 
-                                # Remove old title key if title was renamed
                                 if edit_title != s_title:
                                     del course_data["sessions"][s_title]
                                     
                                 course_data["sessions"][edit_title] = {
                                     "date": updated_date_str,
                                     "slides": updated_slides,
+                                    "slides_filename": updated_slides_fn,
                                     "pqs": updated_pqs,
+                                    "pqs_filename": updated_pqs_fn,
                                     "style_profile": updated_style
                                 }
                                 
