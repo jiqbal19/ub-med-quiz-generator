@@ -76,7 +76,7 @@ if not st.session_state.authenticated_course:
                 }
                 save_data(data)
                 st.success(f"Course created! 🎉 Passcode for {new_course_name}: **{generated_passcode}**")
-                st.info("Save this passcode to share with co-instructors. (Developer override '1901' is active).")
+                st.info("Save this passcode to share with co-instructors.")
 
 # --- AUTHENTICATED FACULTY DASHBOARD ---
 else:
