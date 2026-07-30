@@ -6,6 +6,15 @@ import datetime
 
 st.set_page_config(page_title="Faculty Studio", page_icon="👨‍🏫", layout="wide")
 
+# Hide Streamlit form submission helper notes ("Press Enter to submit")
+st.markdown("""
+    <style>
+    [data-testid="InputInstructions"] {
+        display: none !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 BIN_ID = st.secrets.get("JSONBIN_BIN_ID", "")
 JSONBIN_KEY = st.secrets.get("JSONBIN_API_KEY", "")
 GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
@@ -89,7 +98,6 @@ if not st.session_state.authenticated_course:
         if not data:
             st.info("No active courses created yet. Switch to 'Create New Course' to get started.")
         else:
-            # Wrap in st.form to enable Enter key submission
             with st.form("login_form"):
                 selected_course = st.selectbox("Select Course:", options=list(data.keys()))
                 entered_code = st.text_input("Enter 4-Digit Passcode:", type="password")
