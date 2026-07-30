@@ -214,7 +214,6 @@ else:
                 sess_info = sessions[s_title]
                 raw_date = sess_info.get("date", "N/A")
                 
-                # Format MM/DD/YYYY for expander header
                 display_date = "N/A"
                 if raw_date != "N/A":
                     try:
@@ -240,13 +239,18 @@ else:
                     edit_title = st.text_input("Session Title", value=s_title, key=f"edit_title_{s_title}")
                     edit_date = st.date_input("Session Date Held", value=default_date, format="MM/DD/YYYY", key=f"edit_date_{s_title}")
                     
+                    # Slide Filename Display
+                    curr_slides_fn = sess_info.get("slides_filename")
+                    if not curr_slides_fn or curr_slides_fn == "Uploaded Slide PDF":
+                        curr_slides_fn = "[Uploaded PDF - Name not recorded]"
+                    
                     st.markdown("**Replace Lecture Slides (PDF - Optional)**")
-                    curr_slides_fn = sess_info.get("slides_filename", "Uploaded Slide PDF")
                     st.caption(f"📎 **Currently attached file:** `{curr_slides_fn}`")
                     new_slides_file = st.file_uploader("Upload new slide PDF to replace:", type=["pdf"], key=f"edit_slides_{s_title}")
                     
-                    st.markdown("**Replace Practice Questions (PDF - Optional)**")
+                    # PQ Filename Display
                     curr_pqs_fn = sess_info.get("pqs_filename", "")
+                    st.markdown("**Replace Practice Questions (PDF - Optional)**")
                     if curr_pqs_fn:
                         st.caption(f"📎 **Currently attached file:** `{curr_pqs_fn}`")
                     else:
@@ -265,7 +269,7 @@ else:
                                     updated_slides_fn = new_slides_file.name
                                 else:
                                     updated_slides = sess_info.get("slides", "")
-                                    updated_slides_fn = sess_info.get("slides_filename", "Uploaded Slide PDF")
+                                    updated_slides_fn = sess_info.get("slides_filename", new_slides_file.name if new_slides_file else curr_slides_fn)
                                     
                                 if new_pqs_file:
                                     updated_pqs = extract_text_from_pdf(new_pqs_file)
