@@ -24,6 +24,10 @@ if not BIN_ID or not JSONBIN_KEY:
 # Initialize Google GenAI client
 client = genai.Client(api_key=GEMINI_KEY)
 
+# Fallback chain if primary model experiences high demand (503 error)
+PRIMARY_MODEL = "gemini-3.5-flash"
+FALLBACK_MODELS = ["gemini-3.1-pro", "gemini-2.5-flash"]
+
 def load_cloud_data():
     url = f"https://api.jsonbin.io/v3/b/{BIN_ID}/latest"
     headers = {"X-Master-Key": JSONBIN_KEY}
@@ -226,15 +230,32 @@ with col2:
 
             contents_payload = uploaded_files + [prompt]
 
-            full_text = ""
-            response = client.models.generate_content_stream(
-                model="gemini-3.5-flash",
-                contents=contents_payload
-            )
+            # Attempt stream with primary model, fall back to secondary models if 503 occurs
+            response = None
+            models_to_try = [PRIMARY_MODEL] + FALLBACK_MODELS
             
+            for target_model in models_to_try:
+                try:
+                    response = client.models.generate_content_stream(
+                        model=target_model,
+                        contents=contents_payload
+                    )
+                    break  # Successfully initiated stream
+                except Exception as model_err:
+                    if "503" in str(model_err) or "UNAVAILABLE" in str(model_err):
+                        status_box.warning(f"⚠️ Primary model busy. Switching to fallback engine...")
+                        time.sleep(1)
+                        continue
+                    else:
+                        raise model_err
+
+            if not response:
+                raise Exception("All Gemini model endpoints are currently experiencing high demand. Please try again in a few moments.")
+
             progress_bar.progress(60)
             status_box.info("✍️ Live Streaming: Writing questions & rationales below...")
             
+            full_text = ""
             chunk_count = 0
             for chunk in response:
                 if chunk.text:
