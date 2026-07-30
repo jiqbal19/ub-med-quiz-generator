@@ -5,6 +5,7 @@ import time
 import tempfile
 import os
 import io
+import json
 from datetime import datetime
 from docx import Document
 
@@ -54,7 +55,6 @@ if not BIN_ID or not JSONBIN_KEY:
 
 client = genai.Client(api_key=GEMINI_KEY)
 
-# Broad model hierarchy for maximum 503 resilience
 MODEL_CHAIN = [
     "gemini-flash-latest",
     "gemini-2.5-flash",
@@ -311,9 +311,8 @@ with col2:
 
             response = None
             
-            # Robust Retry Mechanism for 503 Spikes & Unavailable Endpoints
             for target_model in MODEL_CHAIN:
-                for attempt in range(3):  # Retry up to 3 times per model
+                for attempt in range(3):
                     try:
                         response = client.models.generate_content_stream(
                             model=target_model,
@@ -332,7 +331,7 @@ with col2:
                     break
 
             if not response:
-                raise Exception("Google API servers are currently experiencing peak load across all engines. Please try clicking 'Generate Practice Quiz' again in 10-15 seconds.")
+                raise Exception("Google API servers are currently experiencing peak load. Please try again in a few moments.")
 
             progress_bar.progress(60)
             status_box.info("✍️ Live Streaming: Writing questions & rationales below...")
@@ -347,7 +346,18 @@ with col2:
                     progress_bar.progress(current_prog)
                     output_container.text_area("Live Stream Output:", value=full_text, height=450)
 
+            # Store in session state
             st.session_state.generated_quiz = full_text
+
+            # DUAL-LAYER FIX: Backup to browser localStorage before cleanup
+            escaped_text = json.dumps(full_text)
+            st.components.v1.html(f"""
+                <script>
+                try {{
+                    window.localStorage.setItem('ub_med_quiz_backup', {escaped_text});
+                }} catch (e) {{}}
+                </script>
+            """, height=0)
 
             for g_f in uploaded_files:
                 try:
@@ -357,10 +367,35 @@ with col2:
 
             progress_bar.progress(100)
             status_box.success("🎉 Quiz Generation Complete!")
-            time.sleep(1)
+            time.sleep(0.5)
             
             st.session_state.is_generating = False
-            st.rerun()
+            
+            # Render directly in-place without triggering a risky st.rerun() reset
+            status_box.empty()
+            progress_bar.empty()
+            output_container.empty()
+            
+            st.success("🎉 Practice Quiz Generated!")
+            tb_col1, tb_col2, tb_col3 = st.columns([6, 1.5, 1.5])
+            with tb_col2:
+                st.download_button(
+                    label="📄 .TXT",
+                    data=full_text,
+                    file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+            with tb_col3:
+                docx_data = create_docx(full_text)
+                st.download_button(
+                    label="📝 .DOCX",
+                    data=docx_data,
+                    file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True
+                )
+            st.code(full_text, language="markdown")
             
         except Exception as e:
             for g_f in uploaded_files:
