@@ -21,7 +21,7 @@ if not BIN_ID or not JSONBIN_KEY:
     st.error("🔑 JSONBin credentials missing in Streamlit Secrets!")
     st.stop()
 
-# Initialize the new Google GenAI client
+# Initialize Google GenAI client
 client = genai.Client(api_key=GEMINI_KEY)
 
 def load_cloud_data():
@@ -228,7 +228,7 @@ with col2:
 
             full_text = ""
             response = client.models.generate_content_stream(
-                model="gemini-2.5-flash",
+                model="gemini-3.5-flash",
                 contents=contents_payload
             )
             
