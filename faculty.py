@@ -188,13 +188,11 @@ else:
             elif not slides_file:
                 st.warning("Please upload a slide PDF.")
             else:
-                with st.spinner("parsing slides, reverse-engineering question style, and syncing to database..."):
+                with st.spinner("Parsing slides, reverse-engineering question style, and syncing to database..."):
                     slides_text = extract_text_from_pdf(slides_file)
                     pqs_text = extract_text_from_pdf(pqs_file) if pqs_file else ""
                     
-                    # Pre-analyze style once upon save
                     style_profile = analyze_style_profile(pqs_text)
-                    
                     date_str = session_date.strftime("%Y-%m-%d")
                     
                     course_data["sessions"][session_title] = {
@@ -206,6 +204,7 @@ else:
                     
                     save_cloud_data(data)
                     st.success(f"Published and permanently saved '{session_title}'!")
+                    st.rerun()
 
     with t_manage:
         sessions = course_data.get("sessions", {})
@@ -213,14 +212,71 @@ else:
             st.info("No published sessions in this course yet.")
         else:
             for s_title in list(sessions.keys()):
-                with st.expander(f"📖 [{sessions[s_title].get('date', 'N/A')}] {s_title}"):
-                    has_pqs = bool(sessions[s_title].get("pqs"))
-                    st.write(f"**Date Held:** {sessions[s_title].get('date', 'N/A')}")
-                    st.write(f"**Status:** {'🟢 Custom PQs Pre-Analyzed' if has_pqs else '🟡 Default NBME Style'}")
-                    st.write(f"**Slide Text Length:** {len(sessions[s_title]['slides'])} characters")
+                sess_info = sessions[s_title]
+                cur_date_str = sess_info.get("date", "N/A")
+                
+                with st.expander(f"📖 [{cur_date_str}] {s_title}"):
+                    has_pqs = bool(sess_info.get("pqs"))
+                    st.write(f"**Current Status:** {'🟢 Custom PQs Pre-Analyzed' if has_pqs else '🟡 Default NBME Style'}")
+                    st.write(f"**Slide Text Length:** {len(sess_info.get('slides', ''))} characters")
                     
-                    if st.button(f"🗑️ Delete '{s_title}'", key=f"del_{s_title}"):
-                        del course_data["sessions"][s_title]
-                        save_cloud_data(data)
-                        st.success(f"Deleted '{s_title}'.")
-                        st.rerun()
+                    st.markdown("---")
+                    st.markdown("#### ✏️ Edit Session Details")
+                    
+                    # Parse existing date for date picker
+                    default_date = datetime.date.today()
+                    if cur_date_str != "N/A":
+                        try:
+                            default_date = datetime.datetime.strptime(cur_date_str, "%Y-%m-%d").date()
+                        except ValueError:
+                            pass
+                            
+                    edit_title = st.text_input("Session Title", value=s_title, key=f"edit_title_{s_title}")
+                    edit_date = st.date_input("Session Date Held", value=default_date, key=f"edit_date_{s_title}")
+                    
+                    st.caption("Upload new files ONLY if you wish to replace existing ones:")
+                    new_slides_file = st.file_uploader("Replace Lecture Slides (PDF - Optional)", type=["pdf"], key=f"edit_slides_{s_title}")
+                    new_pqs_file = st.file_uploader("Replace Practice Questions (PDF - Optional)", type=["pdf"], key=f"edit_pqs_{s_title}")
+                    
+                    col_save, col_del = st.columns([1, 1])
+                    
+                    with col_save:
+                        if st.button("💾 Save Session Changes", key=f"save_{s_title}", type="primary"):
+                            with st.spinner("Updating session and re-analyzing style..."):
+                                updated_date_str = edit_date.strftime("%Y-%m-%d")
+                                
+                                # Process replacement slides if uploaded
+                                if new_slides_file:
+                                    updated_slides = extract_text_from_pdf(new_slides_file)
+                                else:
+                                    updated_slides = sess_info.get("slides", "")
+                                    
+                                # Process replacement PQs if uploaded
+                                if new_pqs_file:
+                                    updated_pqs = extract_text_from_pdf(new_pqs_file)
+                                    updated_style = analyze_style_profile(updated_pqs)
+                                else:
+                                    updated_pqs = sess_info.get("pqs", "")
+                                    updated_style = sess_info.get("style_profile", "")
+                                
+                                # Remove old title key if title was renamed
+                                if edit_title != s_title:
+                                    del course_data["sessions"][s_title]
+                                    
+                                course_data["sessions"][edit_title] = {
+                                    "date": updated_date_str,
+                                    "slides": updated_slides,
+                                    "pqs": updated_pqs,
+                                    "style_profile": updated_style
+                                }
+                                
+                                save_cloud_data(data)
+                                st.success("Session updated successfully!")
+                                st.rerun()
+
+                    with col_del:
+                        if st.button(f"🗑️ Delete Session", key=f"del_{s_title}"):
+                            del course_data["sessions"][s_title]
+                            save_cloud_data(data)
+                            st.success(f"Deleted '{s_title}'.")
+                            st.rerun()
