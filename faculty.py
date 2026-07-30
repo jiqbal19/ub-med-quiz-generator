@@ -32,7 +32,7 @@ if not BIN_ID or not JSONBIN_KEY or not GEMINI_KEY:
 genai.configure(api_key=GEMINI_KEY)
 style_analyzer_model = genai.GenerativeModel("models/gemini-2.5-flash-lite")
 
-# --- COMPRESSION HELPERS TO STAY UNDER JSONBIN 100KB LIMIT ---
+# --- COMPRESSION & OPTIMIZATION HELPERS ---
 def compress_text(text: str) -> str:
     """Compresses string text using zlib and base64 encoding."""
     if not text:
@@ -57,34 +57,28 @@ def decompress_text(text: str) -> str:
     return text
 
 def decompress_course_data(raw_data: dict) -> dict:
-    """Recursively decompresses slide text and PQS text for local use."""
+    """Recursively decompresses slide text for local use."""
     if not isinstance(raw_data, dict):
         return {}
     
     for course_id, course_info in raw_data.items():
         if isinstance(course_info, dict):
-            if "global_pqs_text" in course_info:
-                course_info["global_pqs_text"] = decompress_text(course_info["global_pqs_text"])
-            
             sessions = course_info.get("sessions", {})
             if isinstance(sessions, dict):
                 for s_id, s_info in sessions.items():
-                    if isinstance(s_info, dict):
-                        if "slides" in s_info:
-                            s_info["slides"] = decompress_text(s_info["slides"])
-                        if "pqs" in s_info:
-                            s_info["pqs"] = decompress_text(s_info["pqs"])
+                    if isinstance(s_info, dict) and "slides" in s_info:
+                        s_info["slides"] = decompress_text(s_info["slides"])
     return raw_data
 
 def compress_course_data_for_saving(data: dict) -> dict:
-    """Creates a deep copy of course data with compressed slide texts before pushing to JSONBin."""
+    """Creates a deep copy of course data, stripping raw PQ text and compressing slides."""
     import copy
     data_to_save = copy.deepcopy(data)
     
     for course_id, course_info in data_to_save.items():
         if isinstance(course_info, dict):
-            if "global_pqs_text" in course_info:
-                course_info["global_pqs_text"] = compress_text(course_info["global_pqs_text"])
+            # Strip bulky raw PQ text (only keep style_profile, which is all student app needs)
+            course_info["global_pqs_text"] = ""
             
             sessions = course_info.get("sessions", {})
             if isinstance(sessions, dict):
@@ -92,8 +86,7 @@ def compress_course_data_for_saving(data: dict) -> dict:
                     if isinstance(s_info, dict):
                         if "slides" in s_info:
                             s_info["slides"] = compress_text(s_info["slides"])
-                        if "pqs" in s_info:
-                            s_info["pqs"] = compress_text(s_info["pqs"])
+                        s_info["pqs"] = ""  # Strip raw session PQ text
     return data_to_save
 
 def load_cloud_data():
@@ -349,7 +342,7 @@ else:
                     m_text = extract_text_from_file(up_master_file)
                     m_style = analyze_style_profile(m_text)
                     course_data["global_pqs_filename"] = up_master_file.name
-                    course_data["global_pqs_text"] = m_text
+                    course_data["global_pqs_text"] = ""  # Stripped to save database space
                     course_data["global_style_profile"] = m_style
                     save_cloud_data(data)
                     st.success(f"Successfully uploaded and analyzed '{up_master_file.name}' as the course master exam!")
@@ -412,7 +405,6 @@ else:
                         style_prof = analyze_style_profile(pqs_text)
                         pq_mode = "custom"
                     else:
-                        pqs_text = ""
                         pqs_fn = master_fn
                         style_prof = course_data.get("global_style_profile", "")
                         pq_mode = "course_master"
@@ -425,7 +417,7 @@ else:
                         "slides": slides_text,
                         "slides_filename": slides_file.name,
                         "pq_mode": pq_mode,
-                        "pqs": pqs_text,
+                        "pqs": "",  # Stripped to save database space
                         "pqs_filename": pqs_fn,
                         "style_profile": style_prof
                     }
@@ -500,7 +492,7 @@ else:
                         if st.button("💾 Save Changes to Session", key=f"save_{s_title}", type="primary"):
                             if edit_pq_choice == opt_master and not course_has_master:
                                 st.error("❌ Action Required: No course-wide practice exam has been uploaded yet. Upload one above before choosing this option.")
-                            elif edit_pq_choice == opt_custom and not edit_custom_pq_file and not sess_info.get("pqs"):
+                            elif edit_pq_choice == opt_custom and not edit_custom_pq_file and not sess_info.get("style_profile"):
                                 st.error("❌ Action Required: A custom practice question file is required for this setting.")
                             else:
                                 with st.spinner("Syncing updates to database..."):
@@ -519,12 +511,10 @@ else:
                                             updated_pqs_fn = edit_custom_pq_file.name
                                             updated_style = analyze_style_profile(updated_pqs)
                                         else:
-                                            updated_pqs = sess_info.get("pqs", "")
                                             updated_pqs_fn = sess_info.get("pqs_filename", "")
                                             updated_style = sess_info.get("style_profile", "")
                                         updated_mode = "custom"
                                     else:
-                                        updated_pqs = ""
                                         updated_pqs_fn = master_fn
                                         updated_style = course_data.get("global_style_profile", "")
                                         updated_mode = "course_master"
@@ -537,7 +527,7 @@ else:
                                         "slides": updated_slides,
                                         "slides_filename": updated_slides_fn,
                                         "pq_mode": updated_mode,
-                                        "pqs": updated_pqs,
+                                        "pqs": "",  # Stripped to save database space
                                         "pqs_filename": updated_pqs_fn,
                                         "style_profile": updated_style
                                     }
