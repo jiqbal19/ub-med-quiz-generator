@@ -86,6 +86,21 @@ def create_docx(text_content):
     bio.seek(0)
     return bio.getvalue()
 
+@st.dialog("⚠️ Clear Generated Quiz?")
+def confirm_reset_dialog():
+    st.write("Are you sure you want to clear this generated practice quiz?")
+    st.warning("⚠️ **Note:** Once cleared, this quiz cannot be restored and you will need to generate a new set.")
+    
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        if st.button("🚨 Yes, Clear Quiz", type="primary", use_container_width=True):
+            st.session_state.generated_quiz = ""
+            st.session_state.is_generating = False
+            st.rerun()
+    with c2:
+        if st.button("Cancel", use_container_width=True):
+            st.rerun()
+
 st.title("🎓 Student Practice Question Generator")
 st.caption("Select your course and lecture sessions to generate practice questions modeled after in-house exam style.")
 
@@ -100,6 +115,10 @@ if "is_generating" not in st.session_state:
 if "generated_quiz" not in st.session_state:
     st.session_state.generated_quiz = ""
 
+# Freeze parameters if a quiz is already active or generating
+quiz_exists = bool(st.session_state.generated_quiz)
+is_active = st.session_state.is_generating or quiz_exists
+
 st.markdown("---")
 col1, col2 = st.columns([1, 1.3], gap="large")
 
@@ -107,7 +126,7 @@ with col1:
     selected_course = st.selectbox(
         "Select Course:", 
         options=list(data.keys()),
-        disabled=st.session_state.get("is_generating", False)
+        disabled=is_active
     )
     course_info = data.get(selected_course, {})
     sessions_dict = course_info.get("sessions", {})
@@ -135,7 +154,7 @@ with col1:
         "Select All Sessions", 
         key=f"select_all_{selected_course}",
         on_change=toggle_all_sessions,
-        disabled=st.session_state.is_generating
+        disabled=is_active
     )
     
     selected_session_titles = []
@@ -160,7 +179,7 @@ with col1:
             if st.checkbox(
                 display_label, 
                 key=cb_key,
-                disabled=st.session_state.is_generating
+                disabled=is_active
             ):
                 selected_session_titles.append(title)
             
@@ -174,7 +193,7 @@ with col1:
             max_value=20, 
             value=5, 
             step=1,
-            disabled=st.session_state.is_generating
+            disabled=is_active
         )
     with p_col2:
         arrange_mode = "By Session"
@@ -182,10 +201,10 @@ with col1:
             arrange_mode = st.radio(
                 "Arrangement:",
                 options=["By Session", "Shuffle"],
-                disabled=st.session_state.is_generating
+                disabled=is_active
             )
     
-    if not st.session_state.is_generating:
+    if not is_active:
         if st.button("🚀 Generate Practice Quiz", type="primary", use_container_width=True):
             if not selected_session_titles:
                 st.error("Please select at least one lecture session.")
@@ -194,10 +213,8 @@ with col1:
                 st.session_state.generated_quiz = ""
                 st.rerun()
     else:
-        if st.button("🛑 Cancel & Reset Quiz", use_container_width=True):
-            st.session_state.is_generating = False
-            st.warning("Generation cancelled.")
-            st.rerun()
+        if st.button("🛑 Clear & Reset Quiz", use_container_width=True):
+            confirm_reset_dialog()
 
 with col2:
     st.subheader("3. Generated Quiz Output")
@@ -214,11 +231,7 @@ with col2:
 
         status_box = st.empty()
         progress_bar = st.progress(0)
-        
-        # Action bar container for download options
         action_bar = st.empty()
-        
-        # Dedicated container for live streaming text
         output_container = st.empty()
         
         status_box.info("⚡ Preparing full slide decks for AI context...")
@@ -350,22 +363,18 @@ with col2:
                     progress_bar.progress(current_prog)
                     output_container.text_area("Live Stream Output:", value=full_text, height=450)
 
-            # Store completed quiz in session state and update state flag
             st.session_state.generated_quiz = full_text
             st.session_state.is_generating = False
 
-            # Delete temporary upload files
             for g_f in uploaded_files:
                 try:
                     client.files.delete(name=g_f.name)
                 except Exception:
                     pass
 
-            # Clear status boxes
             progress_bar.progress(100)
             status_box.success("🎉 Practice Quiz Generated!")
             
-            # Render download bar and static code block directly in place so text never disappears
             with action_bar.container():
                 tb_col1, tb_col2, tb_col3 = st.columns([6, 1.5, 1.5])
                 with tb_col2:
@@ -401,7 +410,7 @@ with col2:
             st.error(f"Error generating questions: {e}")
 
     elif st.session_state.generated_quiz:
-        st.success("🎉 Practice Quiz Generated!")
+        st.success("🎉 Practice Quiz Frozen & Active")
         
         tb_col1, tb_col2, tb_col3 = st.columns([6, 1.5, 1.5])
         
