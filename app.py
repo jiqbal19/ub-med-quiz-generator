@@ -8,17 +8,19 @@ from datetime import datetime
 
 st.set_page_config(page_title="UB Med Practice Generator", page_icon="🩺", layout="wide")
 
-GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
-BIN_ID = st.secrets.get("JSONBIN_BIN_ID", "")
-JSONBIN_KEY = st.secrets.get("JSONBIN_API_KEY", "")
+GEMINI_KEY = str(st.secrets.get("GEMINI_API_KEY", "")).strip()
+BIN_ID = str(st.secrets.get("JSONBIN_BIN_ID", "")).strip()
+JSONBIN_KEY = str(st.secrets.get("JSONBIN_API_KEY", "")).strip()
 
-if not GEMINI_KEY or not BIN_ID or not JSONBIN_KEY:
-    st.error("🔑 API Keys or DB Credentials missing in Streamlit Secrets!")
+if not GEMINI_KEY or GEMINI_KEY == "None":
+    st.error("🔑 `GEMINI_API_KEY` is missing or invalid in your Streamlit Secrets dashboard!")
+    st.stop()
+
+if not BIN_ID or not JSONBIN_KEY:
+    st.error("🔑 JSONBin credentials missing in Streamlit Secrets!")
     st.stop()
 
 genai.configure(api_key=GEMINI_KEY)
-
-# Using gemini-2.5-flash with Native File Contexts for maximum speed and 100% document coverage
 model = genai.GenerativeModel("models/gemini-2.5-flash")
 
 def load_cloud_data():
@@ -156,21 +158,18 @@ with col2:
         remainder = num_questions % k
         
         try:
-            # Stage full slide decks natively into temporary files
             for idx, title in enumerate(selected_session_titles):
                 quota = base_quota + (1 if idx < remainder else 0)
                 sess = sessions_dict[title]
                 slides_text = sess.get("slides", "")
                 
-                # Write full slide text to temporary file for native Gemini processing
                 with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".txt") as temp_file:
                     temp_file.write(f"FULL LECTURE SLIDES FOR SESSION: '{title}'\n\n" + slides_text)
                     temp_path = temp_file.name
                 
-                # Upload natively to Google API
                 g_file = genai.upload_file(path=temp_path, display_name=f"Slides_{title}")
                 uploaded_gemini_files.append(g_file)
-                os.remove(temp_path)  # clean up local temp file
+                os.remove(temp_path)
                 
                 session_instructions += f"\n- Session '{title}': Generate exactly {quota} question(s)."
                 
@@ -224,7 +223,6 @@ with col2:
             - Exact Slide/Page Citation from the session slides.
             """
 
-            # Combine uploaded slide files and prompt into API call
             contents_payload = uploaded_gemini_files + [prompt]
 
             full_text = ""
@@ -242,7 +240,6 @@ with col2:
                     progress_bar.progress(current_prog)
                     output_container.text_area("Copyable Quiz Output:", value=full_text, height=600)
 
-            # Cleanup uploaded files from Google API storage
             for g_f in uploaded_gemini_files:
                 try:
                     genai.delete_file(g_f.name)
@@ -263,7 +260,6 @@ with col2:
             st.rerun()
             
         except Exception as e:
-            # Ensure cleanup on failure
             for g_f in uploaded_gemini_files:
                 try:
                     genai.delete_file(g_f.name)
