@@ -37,7 +37,8 @@ def load_cloud_data():
         req = requests.get(url, headers=headers)
         if req.status_code == 200:
             raw_data = req.json().get("record", {})
-            return {k: v for k, v in raw_data.items() if isinstance(v, dict) and "sessions" in v}
+            # FIX 1: Safely load any valid course dict (even newly created ones before sessions exist)
+            return {k: v for k, v in raw_data.items() if isinstance(v, dict) and ("sessions" in v or "passcode" in v)}
     except Exception:
         return {}
     return {}
@@ -49,9 +50,15 @@ def save_cloud_data(data):
         "X-Master-Key": JSONBIN_KEY
     }
     try:
-        requests.put(url, headers=headers, json=data)
+        req = requests.put(url, headers=headers, json=data)
+        if req.status_code == 200:
+            return True
+        else:
+            st.error(f"Failed to sync with cloud database ({req.status_code}): {req.text}")
+            return False
     except Exception as e:
         st.error(f"Failed to sync with cloud database: {e}")
+        return False
 
 def extract_text_from_file(uploaded_file):
     if not uploaded_file:
@@ -181,10 +188,10 @@ if not st.session_state.authenticated_course:
                         "global_style_profile": "",
                         "sessions": {}
                     }
-                    save_cloud_data(data)
-                    st.session_state.newly_created_course = new_course_name
-                    st.session_state.newly_created_passcode = generated_passcode
-                    st.rerun()
+                    if save_cloud_data(data):
+                        st.session_state.newly_created_course = new_course_name
+                        st.session_state.newly_created_passcode = generated_passcode
+                        st.rerun()
 
         if "newly_created_course" in st.session_state and st.session_state.newly_created_course:
             nc_name = st.session_state.newly_created_course
@@ -342,6 +349,9 @@ else:
                         style_prof = course_data.get("global_style_profile", "")
                         pq_mode = "course_master"
 
+                    if "sessions" not in course_data:
+                        course_data["sessions"] = {}
+
                     course_data["sessions"][session_title] = {
                         "date": date_str,
                         "slides": slides_text,
@@ -352,9 +362,9 @@ else:
                         "style_profile": style_prof
                     }
                     
-                    save_cloud_data(data)
-                    st.session_state.saved_session_info = {"title": session_title, "action": "published"}
-                    st.rerun()
+                    if save_cloud_data(data):
+                        st.session_state.saved_session_info = {"title": session_title, "action": "published"}
+                        st.rerun()
 
     # --- TAB 2: MANAGE SESSIONS ---
     with t_manage:
@@ -464,13 +474,13 @@ else:
                                         "style_profile": updated_style
                                     }
                                     
-                                    save_cloud_data(data)
-                                    st.session_state.saved_session_info = {"title": edit_title, "action": "updated"}
-                                    st.rerun()
+                                    if save_cloud_data(data):
+                                        st.session_state.saved_session_info = {"title": edit_title, "action": "updated"}
+                                        st.rerun()
 
                     with col_del:
                         if st.button(f"🗑️ Delete Session", key=f"del_{s_title}"):
                             del course_data["sessions"][s_title]
-                            save_cloud_data(data)
-                            st.success(f"Session '{s_title}' deleted.")
-                            st.rerun()
+                            if save_cloud_data(data):
+                                st.success(f"Session '{s_title}' deleted.")
+                                st.rerun()
