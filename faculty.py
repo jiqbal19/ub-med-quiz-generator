@@ -1,26 +1,39 @@
 import streamlit as st
 import pypdf
-import json
+import requests
 import random
-import os
 
 st.set_page_config(page_title="Faculty Studio", page_icon="👨‍🏫", layout="wide")
 
-DATA_FILE = "courses_data.json"
+BIN_ID = st.secrets.get("JSONBIN_BIN_ID", "")
+JSONBIN_KEY = st.secrets.get("JSONBIN_API_KEY", "")
 DEV_OVERRIDE = "1901"
 
-def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            return {}
+if not BIN_ID or not JSONBIN_KEY:
+    st.error("🔑 Database Credentials missing in Streamlit Secrets!")
+    st.stop()
+
+def load_cloud_data():
+    url = f"https://api.jsonbin.io/v3/b/{BIN_ID}/latest"
+    headers = {"X-Master-Key": JSONBIN_KEY}
+    try:
+        req = requests.get(url, headers=headers)
+        if req.status_code == 200:
+            return req.json().get("record", {})
+    except Exception:
+        return {}
     return {}
 
-def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+def save_cloud_data(data):
+    url = f"https://api.jsonbin.io/v3/b/{BIN_ID}"
+    headers = {
+        "Content-Type": "application/json",
+        "X-Master-Key": JSONBIN_KEY
+    }
+    try:
+        requests.put(url, headers=headers, json=data)
+    except Exception as e:
+        st.error(f"Failed to sync with cloud database: {e}")
 
 def extract_text_from_pdf(pdf_file):
     pdf_reader = pypdf.PdfReader(pdf_file)
@@ -31,9 +44,8 @@ def extract_text_from_pdf(pdf_file):
             text += f"\n--- Slide/Page {page_num} ---\n" + extracted
     return text
 
-data = load_data()
+data = load_cloud_data()
 
-# Session states for authentication and delete confirmation
 if "authenticated_course" not in st.session_state:
     st.session_state.authenticated_course = None
 if "show_delete_course_confirm" not in st.session_state:
@@ -41,7 +53,6 @@ if "show_delete_course_confirm" not in st.session_state:
 
 st.title("👨‍🏫 Faculty Studio Portal")
 
-# --- WELCOME & COURSE SELECTION ---
 if not st.session_state.authenticated_course:
     st.caption("Manage course sessions, upload slide decks, and set style exemplars.")
     
@@ -77,7 +88,7 @@ if not st.session_state.authenticated_course:
                     "global_style_pqs": "",
                     "sessions": {}
                 }
-                save_data(data)
+                save_cloud_data(data)
                 st.session_state.newly_created_course = new_course_name
                 st.session_state.newly_created_passcode = generated_passcode
                 st.rerun()
@@ -95,7 +106,6 @@ if not st.session_state.authenticated_course:
                 st.session_state.newly_created_passcode = None
                 st.rerun()
 
-# --- AUTHENTICATED FACULTY DASHBOARD ---
 else:
     active_course = st.session_state.authenticated_course
     course_data = data.get(active_course)
@@ -104,7 +114,6 @@ else:
         st.session_state.authenticated_course = None
         st.rerun()
 
-    # Top Navigation & Header Bar
     col_a, col_b, col_c = st.columns([2, 1, 1])
     with col_a:
         st.subheader(f"Active Workspace: **{active_course}**")
@@ -118,14 +127,13 @@ else:
         if st.button("🗑️ Delete Course Workspace"):
             st.session_state.show_delete_course_confirm = True
 
-    # --- COURSE DELETION CONFIRMATION DIALOG ---
     if st.session_state.show_delete_course_confirm:
-        st.warning(f"⚠️ **Are you sure you want to permanently delete '{active_course}'?** This action will erase all published sessions, slides, and practice question data. It cannot be undone.")
+        st.warning(f"⚠️ **Are you sure you want to permanently delete '{active_course}'?** This action will erase all published sessions.")
         col_yes, col_no = st.columns([1, 4])
         with col_yes:
             if st.button("🚨 Yes, Delete Permanently", type="primary"):
                 del data[active_course]
-                save_data(data)
+                save_cloud_data(data)
                 st.session_state.authenticated_course = None
                 st.session_state.show_delete_course_confirm = False
                 st.success(f"'{active_course}' has been completely removed.")
@@ -136,8 +144,6 @@ else:
                 st.rerun()
 
     st.markdown("---")
-    
-    # Workspace Tabs
     t_add, t_manage = st.tabs(["➕ Add New Session", "🛠️ View/Edit Published Sessions"])
     
     with t_add:
@@ -151,7 +157,7 @@ else:
             elif not slides_file:
                 st.warning("Please upload a slide PDF.")
             else:
-                with st.spinner("Parsing PDF and saving permanently..."):
+                with st.spinner("Parsing PDF and saving to cloud..."):
                     slides_text = extract_text_from_pdf(slides_file)
                     pqs_text = extract_text_from_pdf(pqs_file) if pqs_file else ""
                     
@@ -163,8 +169,8 @@ else:
                     if pqs_text:
                         course_data["global_style_pqs"] += f"\n--- {session_title} Exemplars ---\n" + pqs_text
                         
-                    save_data(data)
-                    st.success(f"Published and permanently saved '{session_title}'!")
+                    save_cloud_data(data)
+                    st.success(f"Published and synced '{session_title}' live!")
 
     with t_manage:
         sessions = course_data.get("sessions", {})
@@ -179,6 +185,6 @@ else:
                     
                     if st.button(f"🗑️ Delete '{s_title}'", key=f"del_{s_title}"):
                         del course_data["sessions"][s_title]
-                        save_data(data)
+                        save_cloud_data(data)
                         st.success(f"Deleted '{s_title}'.")
                         st.rerun()
