@@ -23,9 +23,9 @@ if not BIN_ID or not JSONBIN_KEY:
 # Initialize Google GenAI client
 client = genai.Client(api_key=GEMINI_KEY)
 
-# Reliable model hierarchy for high availability
-PRIMARY_MODEL = "gemini-2.5-flash"
-FALLBACK_MODELS = ["gemini-2.5-pro", "gemini-1.5-flash"]
+# Official, active Gemini production models
+PRIMARY_MODEL = "gemini-1.5-flash"
+FALLBACK_MODELS = ["gemini-1.5-pro"]
 
 def load_cloud_data():
     url = f"https://api.jsonbin.io/v3/b/{BIN_ID}/latest"
@@ -138,7 +138,7 @@ with col2:
     st.subheader("3. Generated Quiz Output")
     
     if st.session_state.is_generating:
-        # Prompt only on tab close or page refresh (switching browser tabs does NOT trigger this)
+        # Prevent accidental tab close/refresh during generation (does NOT trigger on tab switching)
         st.components.v1.html("""
             <script>
             window.addEventListener('beforeunload', function (e) {
@@ -243,7 +243,7 @@ with col2:
                     break
                 except Exception as model_err:
                     if "503" in str(model_err) or "UNAVAILABLE" in str(model_err) or "404" in str(model_err):
-                        status_box.warning(f"⚠️ Primary engine busy. Switching to secondary model...")
+                        status_box.warning(f"⚠️ Endpoint busy or unavailable. Falling back to alternative model...")
                         time.sleep(1)
                         continue
                     else:
