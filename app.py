@@ -14,7 +14,7 @@ if not GEMINI_KEY or not BIN_ID or not JSONBIN_KEY:
     st.stop()
 
 genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = genai.GenerativeModel("gemini-1.5-flash-latest")
 
 # Load Data from Cloud Database
 def load_cloud_data():
