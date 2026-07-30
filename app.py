@@ -218,33 +218,8 @@ with col1:
 with col2:
     st.subheader("3. Generated Quiz Output")
     
-    if st.session_state.generated_quiz:
-        st.success("🎉 Practice Quiz Generated!")
-        
-        tb_col1, tb_col2, tb_col3 = st.columns([6, 1.5, 1.5])
-        
-        with tb_col2:
-            st.download_button(
-                label="📄 .TXT",
-                data=st.session_state.generated_quiz,
-                file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.txt",
-                mime="text/plain",
-                use_container_width=True
-            )
-            
-        with tb_col3:
-            docx_data = create_docx(st.session_state.generated_quiz)
-            st.download_button(
-                label="📝 .DOCX",
-                data=docx_data,
-                file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                use_container_width=True
-            )
-            
-        st.code(st.session_state.generated_quiz, language="markdown")
-
-    elif st.session_state.is_generating:
+    # Priority 1: If an output is generating right now
+    if st.session_state.is_generating:
         st.components.v1.html("""
             <script>
             window.addEventListener('beforeunload', function (e) {
@@ -409,5 +384,33 @@ with col2:
             progress_bar.empty()
             st.error(f"Error generating questions: {e}")
 
+    # Priority 2: Display active, completed quiz output
+    elif st.session_state.generated_quiz:
+        st.success("🎉 Practice Quiz Active")
+        
+        tb_col1, tb_col2, tb_col3 = st.columns([6, 1.5, 1.5])
+        
+        with tb_col2:
+            st.download_button(
+                label="📄 .TXT",
+                data=st.session_state.generated_quiz,
+                file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.txt",
+                mime="text/plain",
+                use_container_width=True
+            )
+            
+        with tb_col3:
+            docx_data = create_docx(st.session_state.generated_quiz)
+            st.download_button(
+                label="📝 .DOCX",
+                data=docx_data,
+                file_name=f"{selected_course.replace(' ', '_')}_Practice_Quiz.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True
+            )
+            
+        st.code(st.session_state.generated_quiz, language="markdown")
+
+    # Priority 3: Default initial state
     else:
         st.info("Select options on the left and click 'Generate Practice Quiz' to create questions.")
