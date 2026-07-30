@@ -10,15 +10,15 @@ from docx import Document
 
 st.set_page_config(page_title="UB Med Practice Generator", page_icon="🩺", layout="wide")
 
-# Custom CSS to minimize padding, compress gaps, and keep everything above the fold
+# Custom CSS: Restored top padding for title visibility + compact internal spacing
 st.markdown("""
     <style>
-        .block-container { padding-top: 1rem !important; padding-bottom: 0.5rem !important; }
-        h1 { font-size: 1.6rem !important; margin-bottom: 0rem !important; padding-bottom: 0rem !important; }
-        h3 { font-size: 1.05rem !important; margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+        .block-container { padding-top: 2.5rem !important; padding-bottom: 0.5rem !important; }
+        h1 { font-size: 1.6rem !important; margin-bottom: 0.1rem !important; padding-bottom: 0rem !important; }
+        h3 { font-size: 1.05rem !important; margin-top: 0.1rem !important; margin-bottom: 0.1rem !important; }
         .stCaption { margin-bottom: 0.2rem !important; }
-        hr { margin-top: 0.3rem !important; margin-bottom: 0.3rem !important; }
-        div[data-testid="stVerticalBlock"] > div { gap: 0.4rem !important; }
+        hr { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+        div[data-testid="stVerticalBlock"] > div { gap: 0.3rem !important; }
         
         /* Force line/word wrapping in text areas and code blocks */
         code, pre, div[data-baseweb="textarea"] textarea {
@@ -111,7 +111,6 @@ with col1:
 
     st.subheader("1. Select Lecture Sessions")
     
-    # Callback to handle robust "Select All" toggle across Streamlit session state
     def toggle_all_sessions():
         select_all_state = st.session_state.get(f"select_all_{selected_course}", False)
         for title, _ in sorted_sessions:
@@ -126,8 +125,7 @@ with col1:
     
     selected_session_titles = []
     
-    # Compact scrollable container for lecture sessions
-    with st.container(height=125):
+    with st.container(height=110):
         for title, details in sorted_sessions:
             raw_date = details.get("date", "")
             formatted_date = ""
