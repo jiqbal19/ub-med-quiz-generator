@@ -24,34 +24,162 @@ def run_with_timeout(fn, timeout_seconds, *args, **kwargs):
                 "aborted. This is usually a temporary network or API issue — please try again."
             )
 
-st.set_page_config(page_title="UB Med Practice Generator", page_icon="🩺", layout="wide")
+st.set_page_config(page_title="Jacobs Practice Generator", page_icon="🩺", layout="wide")
 
-# Custom CSS: Restored top padding, tight spacing, word wrapping, and UB Blue (#005bbb) primary buttons
+# --- Jacobs School of Medicine design system ------------------------------
+# Palette: institutional navy + refined UB blue, warm "exam paper" background,
+# muted clinical red (live) / sage (complete) accents.
+# Type: Source Serif 4 (headings) + IBM Plex Sans (UI) + IBM Plex Mono (data/citations).
 st.markdown("""
     <style>
-        .block-container { padding-top: 2.5rem !important; padding-bottom: 0.5rem !important; }
+        @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+        :root {
+            --jsm-navy: #0a2240;
+            --jsm-blue: #00629b;
+            --jsm-paper: #f7f5ef;
+            --jsm-rule: #d9d2c2;
+            --jsm-pulse: #c1443c;
+            --jsm-sage: #3c6e57;
+        }
+
+        .stApp {
+            background-color: var(--jsm-paper);
+            background-image: repeating-linear-gradient(
+                to bottom,
+                rgba(10, 34, 64, 0.035) 0px,
+                rgba(10, 34, 64, 0.035) 1px,
+                transparent 1px,
+                transparent 29px
+            );
+        }
+
+        html, body, [class*="css"], .stMarkdown, p, label, span, div {
+            font-family: 'IBM Plex Sans', sans-serif;
+        }
+
+        h1, h2, h3 {
+            font-family: 'Source Serif 4', serif !important;
+            color: var(--jsm-navy) !important;
+            font-weight: 600 !important;
+            letter-spacing: -0.01em;
+        }
+
+        .block-container { padding-top: 2rem !important; padding-bottom: 0.5rem !important; }
         h1 { font-size: 1.6rem !important; margin-bottom: 0.1rem !important; padding-bottom: 0rem !important; }
-        h3 { font-size: 1.05rem !important; margin-top: 0.1rem !important; margin-bottom: 0.1rem !important; }
-        .stCaption { margin-bottom: 0.2rem !important; }
-        hr { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+        h3 { font-size: 1.05rem !important; margin-top: 0.1rem !important; margin-bottom: 0.3rem !important; padding-bottom: 0.35rem !important; border-bottom: 1px solid var(--jsm-rule) !important; }
+        .stCaption { margin-bottom: 0.2rem !important; font-family: 'IBM Plex Sans', sans-serif !important; }
+        hr { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; border-color: var(--jsm-rule) !important; }
         div[data-testid="stVerticalBlock"] > div { gap: 0.3rem !important; }
-        
+
         /* Force line/word wrapping in text areas and code blocks */
         code, pre, div[data-baseweb="textarea"] textarea {
             white-space: pre-wrap !important;
             word-wrap: break-word !important;
             overflow-x: hidden !important;
+            font-family: 'IBM Plex Mono', monospace !important;
         }
-        
-        /* UB Blue for Primary Generate Button */
+
+        /* Hero banner + signature ECG pulse-line divider */
+        .jsm-hero {
+            background: var(--jsm-navy);
+            padding: 1.6rem 2rem 0 2rem;
+            border-radius: 10px;
+            margin-bottom: 1.2rem;
+            overflow: hidden;
+        }
+        .jsm-hero-eyebrow {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            letter-spacing: 0.14em;
+            color: #7fa8cf;
+            text-transform: uppercase;
+        }
+        .jsm-hero-title {
+            font-family: 'Source Serif 4', serif;
+            color: #ffffff;
+            font-size: 1.85rem;
+            margin: 0.35rem 0 0.4rem 0;
+            font-weight: 600;
+        }
+        .jsm-hero-sub {
+            color: #cfe0f0;
+            font-size: 0.92rem;
+            margin: 0 0 1.1rem 0;
+            max-width: 640px;
+        }
+        .jsm-pulse-line {
+            height: 18px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='18' viewBox='0 0 120 18'%3E%3Cpolyline points='0,9 28,9 35,2 42,16 49,1 56,17 63,9 120,9' fill='none' stroke='%234f83ab' stroke-width='1.4'/%3E%3C/svg%3E");
+            background-repeat: repeat-x;
+            background-size: 120px 18px;
+        }
+
+        /* Bordered containers -> paper cards with left accent */
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            border: 1px solid var(--jsm-rule) !important;
+            border-left: 3px solid var(--jsm-blue) !important;
+            border-radius: 6px !important;
+            background: #ffffff;
+        }
+        div[data-testid="stExpander"] {
+            border: 1px solid var(--jsm-rule) !important;
+            border-left: 3px solid var(--jsm-blue) !important;
+            border-radius: 6px !important;
+            background: #ffffff;
+        }
+        div[data-testid="stCodeBlock"], div[data-testid="stTextArea"] textarea {
+            border: 1px solid var(--jsm-rule) !important;
+            border-radius: 6px !important;
+        }
+
+        /* Buttons */
         button[kind="primary"] {
-            background-color: #005bbb !important;
-            border-color: #005bbb !important;
+            background-color: var(--jsm-blue) !important;
+            border-color: var(--jsm-blue) !important;
             color: #ffffff !important;
+            border-radius: 5px !important;
+            font-weight: 600 !important;
+            letter-spacing: 0.02em;
         }
         button[kind="primary"]:hover {
-            background-color: #004494 !important;
-            border-color: #004494 !important;
+            background-color: var(--jsm-navy) !important;
+            border-color: var(--jsm-navy) !important;
+        }
+        button[kind="secondary"] {
+            border-radius: 5px !important;
+            border-color: var(--jsm-navy) !important;
+            color: var(--jsm-navy) !important;
+        }
+
+        /* Progress bar in institutional blue */
+        div[data-testid="stProgress"] > div > div > div {
+            background-color: var(--jsm-blue) !important;
+        }
+
+        div[data-testid="stAlert"] {
+            border-radius: 6px !important;
+        }
+
+        /* Status pill used for the "live quiz" badge */
+        .jsm-pill {
+            display: inline-block;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.78rem;
+            padding: 3px 12px;
+            border-radius: 20px;
+            background: #eaf2ee;
+            color: var(--jsm-sage);
+            border: 1px solid #cfe3d8;
+        }
+
+        .jsm-footer {
+            margin-top: 1.5rem;
+            padding-top: 0.6rem;
+            border-top: 1px solid var(--jsm-rule);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.72rem;
+            color: #8a8578;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -117,8 +245,14 @@ def confirm_reset_dialog():
         if st.button("Cancel", use_container_width=True):
             st.rerun()
 
-st.title("🎓 Student Practice Question Generator")
-st.caption("Select your course and lecture sessions to generate practice questions modeled after in-house exam style.")
+st.markdown("""
+<div class="jsm-hero">
+    <span class="jsm-hero-eyebrow">Jacobs School of Medicine &amp; Biomedical Sciences</span>
+    <h1 class="jsm-hero-title">Student Practice Question Generator</h1>
+    <p class="jsm-hero-sub">Select your course and lecture sessions to generate practice questions modeled after in-house exam style.</p>
+    <div class="jsm-pulse-line"></div>
+</div>
+""", unsafe_allow_html=True)
 
 data = load_cloud_data()
 
@@ -174,7 +308,7 @@ with col1:
     
     selected_session_titles = []
     
-    with st.container(height=110):
+    with st.container(height=110, border=True):
         for title, details in sorted_sessions:
             raw_date = details.get("date", "")
             formatted_date = ""
@@ -431,7 +565,8 @@ with col2:
 
     # Priority 2: Display active, completed quiz output
     elif st.session_state.generated_quiz:
-        st.success("🎉 Practice Quiz Active")
+        st.markdown('<span class="jsm-pill">● Practice quiz active</span>', unsafe_allow_html=True)
+        st.write("")
         
         tb_col1, tb_col2, tb_col3 = st.columns([6, 1.5, 1.5])
         
@@ -459,3 +594,8 @@ with col2:
     # Priority 3: Default initial state
     else:
         st.info("Select options on the left and click 'Generate Practice Quiz' to create questions.")
+
+st.markdown(
+    '<div class="jsm-footer">JACOBS SCHOOL OF MEDICINE — GENERATED IN ACCORDANCE WITH THE JSMBS GENERATIVE AI USE POLICY</div>',
+    unsafe_allow_html=True
+)
