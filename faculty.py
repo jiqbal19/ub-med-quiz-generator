@@ -9,154 +9,14 @@ import random
 import zlib
 import base64
 
-st.set_page_config(page_title="Jacobs Faculty Studio", page_icon="👨‍🏫", layout="wide")
+st.set_page_config(page_title="Faculty Studio", page_icon="👨‍🏫", layout="wide")
 
-# --- Jacobs School of Medicine design system ------------------------------
-# Shared with app.py: institutional navy + refined UB blue, warm "exam paper"
-# background, Source Serif 4 / IBM Plex Sans / IBM Plex Mono type system.
+# Hide Streamlit form submission helper notes
 st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
-
-        :root {
-            --jsm-navy: #0a2240;
-            --jsm-blue: #00629b;
-            --jsm-paper: #f7f5ef;
-            --jsm-rule: #d9d2c2;
-            --jsm-pulse: #c1443c;
-            --jsm-sage: #3c6e57;
-        }
-
-        [data-testid="InputInstructions"] { display: none !important; }
-
-        .stApp {
-            background-color: var(--jsm-paper);
-            background-image: repeating-linear-gradient(
-                to bottom,
-                rgba(10, 34, 64, 0.035) 0px,
-                rgba(10, 34, 64, 0.035) 1px,
-                transparent 1px,
-                transparent 29px
-            );
-        }
-
-        html, body, [class*="css"], .stMarkdown, p, label, span, div {
-            font-family: 'IBM Plex Sans', sans-serif;
-        }
-
-        h1, h2, h3, h4, h5 {
-            font-family: 'Source Serif 4', serif !important;
-            color: var(--jsm-navy) !important;
-            font-weight: 600 !important;
-            letter-spacing: -0.01em;
-        }
-
-        hr { border-color: var(--jsm-rule) !important; }
-
-        code, pre, div[data-baseweb="textarea"] textarea {
-            font-family: 'IBM Plex Mono', monospace !important;
-        }
-
-        /* Hero banner + signature ECG pulse-line divider */
-        .jsm-hero {
-            background: var(--jsm-navy);
-            padding: 1.6rem 2rem 0 2rem;
-            border-radius: 10px;
-            margin-bottom: 1.2rem;
-            overflow: hidden;
-        }
-        .jsm-hero-eyebrow {
-            font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.7rem;
-            letter-spacing: 0.14em;
-            color: #7fa8cf;
-            text-transform: uppercase;
-        }
-        .jsm-hero-title {
-            font-family: 'Source Serif 4', serif;
-            color: #ffffff;
-            font-size: 1.85rem;
-            margin: 0.35rem 0 0.4rem 0;
-            font-weight: 600;
-        }
-        .jsm-hero-sub {
-            color: #cfe0f0;
-            font-size: 0.92rem;
-            margin: 0 0 1.1rem 0;
-            max-width: 640px;
-        }
-        .jsm-pulse-line {
-            height: 18px;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='18' viewBox='0 0 120 18'%3E%3Cpolyline points='0,9 28,9 35,2 42,16 49,1 56,17 63,9 120,9' fill='none' stroke='%234f83ab' stroke-width='1.4'/%3E%3C/svg%3E");
-            background-repeat: repeat-x;
-            background-size: 120px 18px;
-        }
-
-        /* Cards */
-        div[data-testid="stExpander"] {
-            border: 1px solid var(--jsm-rule) !important;
-            border-left: 3px solid var(--jsm-blue) !important;
-            border-radius: 6px !important;
-            background: #ffffff;
-        }
-        div[data-testid="stForm"] {
-            border: 1px solid var(--jsm-rule) !important;
-            border-left: 3px solid var(--jsm-blue) !important;
-            border-radius: 6px !important;
-            background: #ffffff;
-            padding: 1.25rem !important;
-        }
-
-        /* Buttons */
-        button[kind="primary"] {
-            background-color: var(--jsm-blue) !important;
-            border-color: var(--jsm-blue) !important;
-            color: #ffffff !important;
-            border-radius: 5px !important;
-            font-weight: 600 !important;
-            letter-spacing: 0.02em;
-        }
-        button[kind="primary"]:hover {
-            background-color: var(--jsm-navy) !important;
-            border-color: var(--jsm-navy) !important;
-        }
-        button[kind="secondary"] {
-            border-radius: 5px !important;
-            border-color: var(--jsm-navy) !important;
-            color: var(--jsm-navy) !important;
-        }
-
-        div[data-testid="stAlert"] { border-radius: 6px !important; }
-
-        /* Tabs */
-        button[data-baseweb="tab"] {
-            font-family: 'IBM Plex Sans', sans-serif !important;
-            font-weight: 600 !important;
-            color: var(--jsm-navy) !important;
-        }
-        div[data-baseweb="tab-highlight"] { background-color: var(--jsm-blue) !important; }
-
-        /* Status pills */
-        .jsm-pill {
-            display: inline-block;
-            font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.78rem;
-            padding: 3px 12px;
-            border-radius: 20px;
-            border: 1px solid var(--jsm-rule);
-        }
-        .jsm-pill-blue { background: #eaf1f6; color: var(--jsm-blue); border-color: #cfe0eb; }
-        .jsm-pill-sage { background: #eaf2ee; color: var(--jsm-sage); border-color: #cfe3d8; }
-        .jsm-pill-pulse { background: #fbeceb; color: var(--jsm-pulse); border-color: #f0c9c6; }
-
-        .jsm-footer {
-            margin-top: 1.5rem;
-            padding-top: 0.6rem;
-            border-top: 1px solid var(--jsm-rule);
-            font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.72rem;
-            color: #8a8578;
-        }
+    [data-testid="InputInstructions"] {
+        display: none !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -338,14 +198,7 @@ if "show_delete_course_confirm" not in st.session_state:
 if "saved_session_info" not in st.session_state:
     st.session_state.saved_session_info = None
 
-st.markdown("""
-<div class="jsm-hero">
-    <span class="jsm-hero-eyebrow">Jacobs School of Medicine &amp; Biomedical Sciences</span>
-    <h1 class="jsm-hero-title">Faculty Studio Portal</h1>
-    <p class="jsm-hero-sub">Upload lecture slides, manage course materials, and train the AI on your question writing style.</p>
-    <div class="jsm-pulse-line"></div>
-</div>
-""", unsafe_allow_html=True)
+st.title("👨‍🏫 Faculty Studio Portal")
 
 if st.session_state.saved_session_info:
     info = st.session_state.saved_session_info
@@ -353,6 +206,8 @@ if st.session_state.saved_session_info:
 
 # --- LOGIN SCREEN ---
 if not st.session_state.authenticated_course:
+    st.caption("Upload lecture slides, manage course materials, and train the AI on your question writing style.")
+    
     tab1, tab2 = st.tabs(["🔒 Enter Existing Course Workspace", "➕ Create New Course Workspace"])
     
     with tab1:
@@ -405,8 +260,7 @@ if not st.session_state.authenticated_course:
             nc_code = st.session_state.newly_created_passcode
             
             st.success(f"🎉 Workspace for '{nc_name}' created successfully!")
-            st.markdown(f'<span class="jsm-pill jsm-pill-blue">🔐 YOUR PASSCODE {nc_code}</span>', unsafe_allow_html=True)
-            st.caption("Save this 4-digit code! You and co-faculty will need it to log into this course workspace in the future.")
+            st.info(f"🔐 **Your Assigned Passcode:** `{nc_code}`\n\n*Save this 4-digit code! You and co-faculty will need it to log into this course workspace in the future.*")
             
             if st.button(f"🚀 Enter '{nc_name}' Workspace Now", type="primary"):
                 st.session_state.authenticated_course = nc_name
@@ -425,11 +279,8 @@ else:
 
     col_a, col_b, col_c = st.columns([2, 1, 1])
     with col_a:
-        st.subheader(f"Active Workspace: {active_course}")
-        st.markdown(
-            f'<span class="jsm-pill jsm-pill-blue">🔐 PASSCODE {course_data.get("passcode")}</span>',
-            unsafe_allow_html=True
-        )
+        st.subheader(f"Active Workspace: **{active_course}**")
+        st.caption(f"🔐 Passcode for co-instructors: **{course_data.get('passcode')}**")
     with col_b:
         if st.button("🔒 Exit Workspace"):
             st.session_state.authenticated_course = None
@@ -691,8 +542,3 @@ else:
                             if save_cloud_data(data):
                                 st.success(f"Session '{s_title}' deleted.")
                                 st.rerun()
-
-st.markdown(
-    '<div class="jsm-footer">JACOBS SCHOOL OF MEDICINE — FACULTY STUDIO</div>',
-    unsafe_allow_html=True
-)
