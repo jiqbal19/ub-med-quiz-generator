@@ -267,8 +267,7 @@ with col2:
                 if not cleaned_slides:
                     cleaned_slides = "No slide text content provided."
 
-                inline_slide_context += f"\n\n=========================================\nFULL LECTURE SLIDES FOR SESSION: '{title}'\n=========================================\n{cleaned_slides}\n"
-                
+                inline_slide_context += f"\n\nLECTURE SLIDES FOR SESSION: '{title}'\n{cleaned_slides}\n"
                 session_instructions += f"\n- Session '{title}': Generate exactly {quota} question(s)."
                 
                 sess_style = sess.get("style_profile")
@@ -280,41 +279,31 @@ with col2:
             progress_bar.progress(40)
             status_box.info("🧠 Analyzing slide contents & matching faculty writing style...")
 
-            prompt = f"""
-            You are a medical school faculty member writing completely original, high-yield in-house exam practice questions for students enrolled in {selected_course}.
+            prompt_text = f"""
+            You are a medical school faculty member writing completely original, high-yield in-house exam practice questions for medical students enrolled in {selected_course}.
             
             --- LECTURE SLIDES REFERENCE DATA ---
             {inline_slide_context}
 
-            --- CRITICAL GROUNDING & ORIGINALITY RULES ---
-            1. STRICT SCOPE & ORIGINALITY: All questions, options, and distractors MUST be grounded STRICTLY in facts explicitly stated in the provided lecture slide documents above. Read through all slides completely. Do NOT copy or closely paraphrase specific questions from existing practice sets.
-            2. INDISTINGUISHABLE FACULTY STYLE: Match the faculty's exact tone, clinical vignette complexity, stem phrasing, and distractor design so closely that the AI-generated questions are indistinguishable from real faculty exam questions.
-            3. OBJECTIVES ALIGNMENT: Locate the "Session/Lecture Learning Objectives" (usually on early slides) for each session document. Ensure every question directly tests a stated session learning objective.
-            4. SINGLE SESSION ASSIGNMENT: Each question corresponds to EXACTLY ONE lecture session document.
-            5. NO LATEX: Do NOT use LaTeX delimiters or math formatting (e.g., do NOT use $, $$, \\frac, \\text). Write all numerical values, units, and chemical formulas using plain text and standard characters only (e.g., write "mg/dL", "alpha-1", "H2O", "10-15%", "greater than", "less than").
-            
-            --- ANSWER KEY RANDOMIZATION & CITATION RULES ---
-            6. RANDOMIZED CORRECT ANSWER DISTRIBUTION: You MUST vary the correct answer position randomly across options A, B, C, D, and E. Avoid clustering correct answers on B or C. Distribute correct keys unpredictably across the set (e.g., A, D, E, B, C) so option placement cannot be guessed by students.
-            7. SPECIFIC SLIDE NUMBER CITATIONS: In Section 2, every question rationale MUST cite the exact slide/page number where the fact was derived from the document (e.g., "Exact Slide Citation: Slide 14 - Gastric Acid Phase Control").
+            --- CRITICAL GROUNDING RULES ---
+            1. STRICT SCOPE: All questions, options, and distractors MUST be grounded STRICTLY in facts explicitly stated in the provided lecture slide documents above.
+            2. FACULTY STYLE: Match the faculty's exact tone, clinical vignette complexity, stem phrasing, and distractor design.
+            3. OBJECTIVES ALIGNMENT: Ensure questions test session learning objectives.
+            4. FORMAT: Do NOT use LaTeX delimiters or math formatting (e.g., do NOT use $, $$, \\frac). Write all units and formulas in standard plain text.
+            5. RANDOMIZED CORRECT ANSWERS: Vary correct answer placement unpredictably across A, B, C, D, and E.
+            6. SLIDE CITATIONS: In Section 2, every question rationale MUST cite the exact slide number from the slides above.
 
             --- TARGET QUESTION DISTRIBUTION PER SESSION ---
             {session_instructions}
 
             --- IN-HOUSE FACULTY QUESTION WRITING STYLE GUIDELINES ---
-            Emulate the exact tone, vignette structure, stem phrasing, and distractor style outlined below:
             {combined_styles if combined_styles else "Write clear, high-yield in-house medical school exam questions based strictly on the slides."}
 
             --- ARRANGEMENT & FORMATTING ---
             * Total Questions to generate: {num_questions}.
-            * Arrangement Mode requested: '{arrange_mode}'.
-              - If 'By Session': Group all questions for Session 1 together, then Session 2, etc.
-              - If 'Shuffle': Interleave and shuffle the questions across the selected sessions randomly.
-            
-            Format your output clearly into two main sections:
+            * Arrangement Mode: '{arrange_mode}'.
             
             SECTION 1: QUESTIONS
-            For each question, output ONLY the clean question header and stem. Do NOT include the session title in Section 1.
-            Format:
             Question [Number]
             [Vignette / Stem]
             A) ...
@@ -324,68 +313,39 @@ with col2:
             E) ...
 
             SECTION 2: ANSWER KEY & RATIONALES
-            For each question, explicitly state the corresponding session title, correct letter, rationale, and specific slide number here.
-            Format:
             Question [Number]
             - Session: [Session Title]
             - Correct Answer: [Letter A-E]
-            - Detailed Rationale: Explaining why the correct option is right based on slide facts, and why each distractor is incorrect.
+            - Detailed Rationale: Explaining why option is right based on slide facts.
             - Exact Slide Citation: Slide [Number] ([Slide Topic/Heading])
 
-            --- REQUIRED FOOTER ---
-            At the very end of your response, output a blank line followed exactly by:
             Generated by Jacobs Practice Question Generator, in accordance with the JSMBS Generative Artificial Intelligence Use Policy for Medical Students in the Medical Curriculum.
             """
 
             full_text = ""
-            STALL_TIMEOUT = 60
-
-            def _consume_next(iterator):
-                return next(iterator)
 
             for target_model in MODEL_CHAIN:
-                for attempt in range(2):
-                    try:
-                        status_box.info(f"✍️ Generating questions using engine `{target_model}`...")
-                        response = run_with_timeout(
-                            client.models.generate_content_stream,
-                            45,
-                            model=target_model,
-                            contents=[prompt]
-                        )
-                        
-                        full_text = ""
-                        chunk_count = 0
-                        response_iter = iter(response)
-                        
-                        while True:
-                            try:
-                                chunk = run_with_timeout(_consume_next, STALL_TIMEOUT, response_iter)
-                            except StopIteration:
-                                break
-                            if chunk.text:
-                                full_text += chunk.text
-                                chunk_count += 1
-                                current_prog = min(60 + (chunk_count * 2), 98)
-                                progress_bar.progress(current_prog)
-                                output_container.text_area("Live Stream Output:", value=full_text, height=450)
+                try:
+                    status_box.info(f"✍️ Generating questions using engine `{target_model}`...")
+                    progress_bar.progress(60)
+                    
+                    # Direct standard generation call with fallback streaming
+                    response = client.models.generate_content(
+                        model=target_model,
+                        contents=prompt_text
+                    )
+                    
+                    if response and response.text and response.text.strip():
+                        full_text = response.text.strip()
+                        output_container.code(full_text, language="markdown")
+                        break
+                except Exception as model_err:
+                    print(f"Model {target_model} failed: {model_err}")
+                    time.sleep(1)
+                    continue
 
-                        if full_text.strip():
-                            break
-                    except Exception as model_err:
-                        err_str = str(model_err)
-                        if "503" in err_str or "UNAVAILABLE" in err_str or "404" in err_str:
-                            time.sleep(2)
-                            continue
-                        else:
-                            break
-                if full_text.strip():
-                    break
-
-            if not full_text.strip():
-                raise Exception(
-                    "The AI engines returned an empty response. Please try generating again."
-                )
+            if not full_text:
+                raise Exception("The AI engines could not generate a response. Please verify that slide contents are present and try again.")
 
             st.session_state.generated_quiz = full_text
             st.session_state.is_generating = False
