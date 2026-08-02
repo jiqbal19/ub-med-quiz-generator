@@ -10,9 +10,6 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from datetime import datetime
 from docx import Document
 
-# Any blocking call to the Gemini API (upload or generate) gets run through this
-# so a stalled/hung network call raises a real, catchable error instead of
-# freezing the app forever with no feedback to the user.
 def run_with_timeout(fn, timeout_seconds, *args, **kwargs):
     with ThreadPoolExecutor(max_workers=1) as ex:
         future = ex.submit(fn, *args, **kwargs)
@@ -26,7 +23,6 @@ def run_with_timeout(fn, timeout_seconds, *args, **kwargs):
 
 st.set_page_config(page_title="UB Med Practice Generator", page_icon="🩺", layout="wide")
 
-# Custom CSS: Restored top padding, tight spacing, word wrapping, and UB Blue (#005bbb) primary buttons
 st.markdown("""
     <style>
         .block-container { padding-top: 2.5rem !important; padding-bottom: 0.5rem !important; }
@@ -36,14 +32,12 @@ st.markdown("""
         hr { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
         div[data-testid="stVerticalBlock"] > div { gap: 0.3rem !important; }
         
-        /* Force line/word wrapping in text areas and code blocks */
         code, pre, div[data-baseweb="textarea"] textarea {
             white-space: pre-wrap !important;
             word-wrap: break-word !important;
             overflow-x: hidden !important;
         }
         
-        /* UB Blue for Primary Generate Button */
         button[kind="primary"] {
             background-color: #005bbb !important;
             border-color: #005bbb !important;
@@ -70,10 +64,10 @@ if not BIN_ID or not JSONBIN_KEY:
 
 client = genai.Client(api_key=GEMINI_KEY)
 
+# Ultra-low-cost primary engine + fallback chain
 MODEL_CHAIN = [
-    "gemini-flash-latest",
+    "gemini-2.5-flash-lite",
     "gemini-2.5-flash",
-    "gemini-pro-latest",
     "gemini-1.5-flash"
 ]
 
@@ -234,7 +228,6 @@ with col1:
 with col2:
     st.subheader("3. Generated Quiz Output")
     
-    # Priority 1: If an output is generating right now
     if st.session_state.is_generating:
         st.components.v1.html("""
             <script>
@@ -268,8 +261,13 @@ with col2:
 
                 status_box.info(f"⚡ Uploading slides for session '{title}' ({idx + 1}/{k})...")
 
+                # Strip empty whitespace lines to optimize input tokens
+                cleaned_slides = "\n".join([line.strip() for line in slides_text.splitlines() if line.strip()])
+                if not cleaned_slides:
+                    cleaned_slides = "No slide text content provided."
+
                 with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".txt") as temp_file:
-                    temp_file.write(f"FULL LECTURE SLIDES FOR SESSION: '{title}'\n\n" + slides_text)
+                    temp_file.write(f"FULL LECTURE SLIDES FOR SESSION: '{title}'\n\n" + cleaned_slides)
                     temp_path = temp_file.name
 
                 try:
@@ -345,59 +343,57 @@ with col2:
 
             contents_payload = uploaded_files + [prompt]
 
-            response = None
-            
+            full_text = ""
+            STALL_TIMEOUT = 60
+
+            def _consume_next(iterator):
+                return next(iterator)
+
+            # Cycle through model chain if a model fails or returns empty text
             for target_model in MODEL_CHAIN:
-                for attempt in range(3):
+                for attempt in range(2):
                     try:
+                        status_box.info(f"✍️ Generating questions using engine `{target_model}`...")
                         response = run_with_timeout(
                             client.models.generate_content_stream,
                             45,
                             model=target_model,
                             contents=contents_payload
                         )
-                        break
+                        
+                        full_text = ""
+                        chunk_count = 0
+                        response_iter = iter(response)
+                        
+                        while True:
+                            try:
+                                chunk = run_with_timeout(_consume_next, STALL_TIMEOUT, response_iter)
+                            except StopIteration:
+                                break
+                            if chunk.text:
+                                full_text += chunk.text
+                                chunk_count += 1
+                                current_prog = min(60 + (chunk_count * 2), 98)
+                                progress_bar.progress(current_prog)
+                                output_container.text_area("Live Stream Output:", value=full_text, height=450)
+
+                        if full_text.strip():
+                            break  # Successfully generated text
                     except Exception as model_err:
                         err_str = str(model_err)
                         if "503" in err_str or "UNAVAILABLE" in err_str or "404" in err_str:
-                            status_box.warning(f"⏳ Server demand high on `{target_model}`. Retrying in 2s (Attempt {attempt+1}/3)...")
                             time.sleep(2)
                             continue
                         else:
-                            raise model_err
-                if response:
+                            break
+                if full_text.strip():
                     break
-
-            if not response:
-                raise Exception("Google API servers are currently experiencing peak load. Please try again in a few moments.")
-
-            progress_bar.progress(60)
-            status_box.info("✍️ Live Streaming: Writing questions & rationales below...")
-            
-            full_text = ""
-            chunk_count = 0
-            STALL_TIMEOUT = 60  # seconds with no new chunk before we give up
-
-            def _consume_next(iterator):
-                return next(iterator)
-
-            response_iter = iter(response)
-            while True:
-                try:
-                    chunk = run_with_timeout(_consume_next, STALL_TIMEOUT, response_iter)
-                except StopIteration:
-                    break
-                if chunk.text:
-                    full_text += chunk.text
-                    chunk_count += 1
-                    current_prog = min(60 + (chunk_count * 2), 98)
-                    progress_bar.progress(current_prog)
-                    output_container.text_area("Live Stream Output:", value=full_text, height=450)
 
             if not full_text.strip():
                 raise Exception(
-                    "The AI returned an empty response. This can happen if the model "
-                    "stalled or was cut off — please try generating again."
+                    "The AI engines returned an empty response. This usually occurs if the selected "
+                    "lecture slides contain missing text or triggered a temporary model refusal. "
+                    "Please try generating again."
                 )
 
             for g_f in uploaded_files:
@@ -411,10 +407,6 @@ with col2:
             st.rerun()
 
         except Exception as e:
-            # Always log the full traceback server-side. When something goes wrong
-            # here the browser often shows nothing useful (or nothing at all if the
-            # connection stalled), so this is frequently the ONLY place the real
-            # cause is visible — check "Manage app" > Logs on Streamlit Cloud.
             print(f"[{datetime.now().isoformat()}] Quiz generation failed: {e}")
             traceback.print_exc()
 
@@ -429,7 +421,6 @@ with col2:
             progress_bar.empty()
             st.error(f"Error generating questions: {e}")
 
-    # Priority 2: Display active, completed quiz output
     elif st.session_state.generated_quiz:
         st.success("🎉 Practice Quiz Active")
         
@@ -456,6 +447,5 @@ with col2:
             
         st.code(st.session_state.generated_quiz, language="markdown")
 
-    # Priority 3: Default initial state
     else:
         st.info("Select options on the left and click 'Generate Practice Quiz' to create questions.")
