@@ -1,232 +1,3 @@
-import streamlit as st
-from google import genai
-import requests
-import time
-import tempfile
-import os
-import io
-import traceback
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-from datetime import datetime
-from docx import Document
-
-def run_with_timeout(fn, timeout_seconds, *args, **kwargs):
-    with ThreadPoolExecutor(max_workers=1) as ex:
-        future = ex.submit(fn, *args, **kwargs)
-        try:
-            return future.result(timeout=timeout_seconds)
-        except FutureTimeoutError:
-            raise TimeoutError(
-                f"The request to Google's API took longer than {timeout_seconds}s and was "
-                "aborted. This is usually a temporary network or API issue — please try again."
-            )
-
-st.set_page_config(page_title="UB Med Practice Generator", page_icon="🩺", layout="wide")
-
-# Custom CSS: Restored top padding, tight spacing, word wrapping, and UB Blue (#005bbb) primary buttons
-st.markdown("""
-    <style>
-        .block-container { padding-top: 2.5rem !important; padding-bottom: 0.5rem !important; }
-        h1 { font-size: 1.6rem !important; margin-bottom: 0.1rem !important; padding-bottom: 0rem !important; }
-        h3 { font-size: 1.05rem !important; margin-top: 0.1rem !important; margin-bottom: 0.1rem !important; }
-        .stCaption { margin-bottom: 0.2rem !important; }
-        hr { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
-        div[data-testid="stVerticalBlock"] > div { gap: 0.3rem !important; }
-        
-        /* Force line/word wrapping in text areas and code blocks */
-        code, pre, div[data-baseweb="textarea"] textarea {
-            white-space: pre-wrap !important;
-            word-wrap: break-word !important;
-            overflow-x: hidden !important;
-        }
-        
-        /* UB Blue for Primary Generate Button */
-        button[kind="primary"] {
-            background-color: #005bbb !important;
-            border-color: #005bbb !important;
-            color: #ffffff !important;
-        }
-        button[kind="primary"]:hover {
-            background-color: #004494 !important;
-            border-color: #004494 !important;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
-GEMINI_KEY = str(st.secrets.get("GEMINI_API_KEY", "")).strip()
-BIN_ID = str(st.secrets.get("JSONBIN_BIN_ID", "")).strip()
-JSONBIN_KEY = str(st.secrets.get("JSONBIN_API_KEY", "")).strip()
-
-if not GEMINI_KEY or GEMINI_KEY == "None":
-    st.error("🔑 `GEMINI_API_KEY` is missing in your Streamlit Secrets dashboard!")
-    st.stop()
-
-if not BIN_ID or not JSONBIN_KEY:
-    st.error("🔑 JSONBin credentials missing in Streamlit Secrets!")
-    st.stop()
-
-client = genai.Client(api_key=GEMINI_KEY)
-
-MODEL_CHAIN = [
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-1.5-flash"
-]
-
-def load_cloud_data():
-    url = f"https://api.jsonbin.io/v3/b/{BIN_ID}/latest"
-    headers = {"X-Master-Key": JSONBIN_KEY}
-    try:
-        req = requests.get(url, headers=headers)
-        if req.status_code == 200:
-            raw_data = req.json().get("record", {})
-            return {k: v for k, v in raw_data.items() if isinstance(v, dict) and "sessions" in v}
-    except Exception as e:
-        st.error(f"Error reading database: {e}")
-    return {}
-
-def create_docx(text_content):
-    doc = Document()
-    doc.add_heading("Jacobs School of Medicine - Practice Questions", level=1)
-    for paragraph in text_content.split("\n"):
-        if paragraph.strip():
-            doc.add_paragraph(paragraph)
-        else:
-            doc.add_paragraph("")
-    bio = io.BytesIO()
-    doc.save(bio)
-    bio.seek(0)
-    return bio.getvalue()
-
-@st.dialog("⚠️ Clear Generated Quiz?")
-def confirm_reset_dialog():
-    st.write("Are you sure you want to clear this generated practice quiz?")
-    st.warning("⚠️ **Note:** Once cleared, this quiz cannot be restored and you will need to generate a new set.")
-    
-    c1, c2 = st.columns([1, 1])
-    with c1:
-        if st.button("🚨 Yes, Clear Quiz", type="primary", use_container_width=True):
-            st.session_state.generated_quiz = ""
-            st.session_state.is_generating = False
-            st.rerun()
-    with c2:
-        if st.button("Cancel", use_container_width=True):
-            st.rerun()
-
-st.title("🎓 Student Practice Question Generator")
-st.caption("Select your course and lecture sessions to generate practice questions modeled after in-house exam style.")
-
-data = load_cloud_data()
-
-if not data:
-    st.info("No active courses are currently available. Please check back after faculty publish a course.")
-    st.stop()
-
-if "is_generating" not in st.session_state:
-    st.session_state.is_generating = False
-if "generated_quiz" not in st.session_state:
-    st.session_state.generated_quiz = ""
-
-has_quiz = bool(st.session_state.generated_quiz)
-is_busy = st.session_state.is_generating or has_quiz
-
-st.markdown("---")
-col1, col2 = st.columns([1, 1.3], gap="large")
-
-with col1:
-    selected_course = st.selectbox(
-        "Select Course:", 
-        options=list(data.keys()),
-        disabled=is_busy
-    )
-    course_info = data.get(selected_course, {})
-    sessions_dict = course_info.get("sessions", {})
-    global_course_style = course_info.get("global_style_profile", "")
-
-    if not sessions_dict:
-        st.warning(f"No lecture sessions available for '{selected_course}' yet.")
-        st.stop()
-
-    def sort_key(item):
-        title, details = item
-        raw_date = details.get("date", "2099-12-31")
-        return (raw_date, title.lower())
-
-    sorted_sessions = sorted(sessions_dict.items(), key=sort_key)
-
-    st.subheader("1. Select Lecture Sessions")
-    
-    def toggle_all_sessions():
-        select_all_state = st.session_state.get(f"select_all_{selected_course}", False)
-        for title, _ in sorted_sessions:
-            st.session_state[f"cb_{selected_course}_{title}"] = select_all_state
-
-    st.checkbox(
-        "Select All Sessions", 
-        key=f"select_all_{selected_course}",
-        on_change=toggle_all_sessions,
-        disabled=is_busy
-    )
-    
-    selected_session_titles = []
-    
-    with st.container(height=110):
-        for title, details in sorted_sessions:
-            raw_date = details.get("date", "")
-            formatted_date = ""
-            if raw_date:
-                try:
-                    dt = datetime.strptime(raw_date, "%Y-%m-%d")
-                    formatted_date = dt.strftime("%m/%d/%Y") + " - "
-                except ValueError:
-                    formatted_date = ""
-            
-            display_label = f"{formatted_date}{title}"
-            cb_key = f"cb_{selected_course}_{title}"
-            
-            if cb_key not in st.session_state:
-                st.session_state[cb_key] = False
-
-            if st.checkbox(
-                display_label, 
-                key=cb_key,
-                disabled=is_busy
-            ):
-                selected_session_titles.append(title)
-            
-    st.subheader("2. Quiz Parameters")
-    
-    p_col1, p_col2 = st.columns([1, 1])
-    with p_col1:
-        num_questions = st.number_input(
-            "Questions (1–20):", 
-            min_value=1, 
-            max_value=20, 
-            value=5, 
-            step=1,
-            disabled=is_busy
-        )
-    with p_col2:
-        arrange_mode = "By Session"
-        if len(selected_session_titles) >= 2:
-            arrange_mode = st.radio(
-                "Arrangement:",
-                options=["By Session", "Shuffle"],
-                disabled=is_busy
-            )
-    
-    if not is_busy:
-        if st.button("🚀 Generate Practice Quiz", type="primary", use_container_width=True):
-            if not selected_session_titles:
-                st.error("Please select at least one lecture session.")
-            else:
-                st.session_state.is_generating = True
-                st.session_state.generated_quiz = ""
-                st.rerun()
-    else:
-        if st.button("🛑 Clear & Reset Quiz", use_container_width=True):
-            confirm_reset_dialog()
-
 with col2:
     st.subheader("3. Generated Quiz Output")
     
@@ -250,6 +21,7 @@ with col2:
         combined_styles = ""
         session_instructions = ""
         inline_slide_context = ""
+        total_slides_char_count = 0
         
         k = len(selected_session_titles)
         base_quota = num_questions // k
@@ -264,9 +36,8 @@ with col2:
                 status_box.info(f"⚡ Processing slides for session '{title}' ({idx + 1}/{k})...")
 
                 cleaned_slides = "\n".join([line.strip() for line in slides_text.splitlines() if line.strip()])
-                if not cleaned_slides:
-                    cleaned_slides = "No slide text content provided."
-
+                total_slides_char_count += len(cleaned_slides)
+                
                 inline_slide_context += f"\n\nLECTURE SLIDES FOR SESSION: '{title}'\n{cleaned_slides}\n"
                 session_instructions += f"\n- Session '{title}': Generate exactly {quota} question(s)."
                 
@@ -275,6 +46,10 @@ with col2:
                     combined_styles += f"\n--- Faculty Writing Style Guidelines for {title} ---\n" + sess_style
                 elif global_course_style:
                     combined_styles += f"\n--- Course-Wide Faculty Writing Style Guidelines ---\n" + global_course_style
+
+            # Check if extracted slides actually contain text
+            if total_slides_char_count < 50:
+                raise ValueError("The selected session slides appear to be empty or missing text in the database. Please re-upload the slides in Faculty Studio.")
 
             progress_bar.progress(40)
             status_box.info("🧠 Analyzing slide contents & matching faculty writing style...")
@@ -323,13 +98,14 @@ with col2:
             """
 
             full_text = ""
+            STABLE_MODELS = ["gemini-2.5-flash", "gemini-1.5-flash"]
+            last_error = ""
 
-            for target_model in MODEL_CHAIN:
+            for target_model in STABLE_MODELS:
                 try:
                     status_box.info(f"✍️ Generating questions using engine `{target_model}`...")
                     progress_bar.progress(60)
                     
-                    # Direct standard generation call with fallback streaming
                     response = client.models.generate_content(
                         model=target_model,
                         contents=prompt_text
@@ -340,12 +116,13 @@ with col2:
                         output_container.code(full_text, language="markdown")
                         break
                 except Exception as model_err:
+                    last_error = str(model_err)
                     print(f"Model {target_model} failed: {model_err}")
                     time.sleep(1)
                     continue
 
             if not full_text:
-                raise Exception("The AI engines could not generate a response. Please verify that slide contents are present and try again.")
+                raise Exception(f"API generation failed. Last model error: {last_error if last_error else 'Unknown error'}")
 
             st.session_state.generated_quiz = full_text
             st.session_state.is_generating = False
